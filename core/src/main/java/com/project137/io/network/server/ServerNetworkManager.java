@@ -24,11 +24,8 @@ public class ServerNetworkManager {
             serverSocket = new ServerSocket(NetworkConfig.PORT);
             udpSocket = new DatagramSocket(NetworkConfig.PORT);
 
-            // TCP Accept Thread
             Thread.ofVirtual().name("TCP-Accept").start(this::acceptTCPConnections);
-            // UDP Receive Thread
             Thread.ofVirtual().name("UDP-Receive").start(this::receiveUDPPackets);
-            // Game Loop Thread
             Thread.ofVirtual().name("Game-Loop").start(this::gameLoop);
 
             System.out.println("[Server] Started on port " + NetworkConfig.PORT);
@@ -46,7 +43,7 @@ public class ServerNetworkManager {
             gameEngine.update(delta);
 
             try {
-                Thread.sleep(16); // ~60 FPS
+                Thread.sleep(16); 
             } catch (InterruptedException e) {
                 break;
             }
@@ -61,17 +58,14 @@ public class ServerNetworkManager {
                 ConnectedClient client = new ConnectedClient(id, socket);
                 clients.put(id, client);
 
-                System.out.println("[Server] Client " + id + " connected from " + socket.getInetAddress());
+                System.out.println("[Server] Client " + id + " connected.");
 
-                // Create Player in ECS
                 gameEngine.addPlayer(id);
-
-                // Send Welcome Packet
                 sendTCP(client, new WelcomePacket(id));
-                // Send Map Data
-                sendTCP(client, new MapDataPacket(gameEngine.getMap()));
+                
+                // Notify all clients about lobby state
+                broadcastLobbyUpdate();
 
-                // Start Listening for this client's TCP messages
                 Thread.ofVirtual().name("TCP-Client-" + id).start(() -> handleTCPClient(client));
 
             } catch (IOException e) {
@@ -84,7 +78,13 @@ public class ServerNetworkManager {
         try {
             while (running) {
                 byte opCode = client.in.readByte();
-                if (opCode == OpCode.TCP_DISCONNECT) {
+                if (opCode == OpCode.TCP_START_GAME) {
+                    // Only Host (Client ID 1) can start the game
+                    if (client.id == 1) {
+                        broadcastTCP(new MapDataPacket(gameEngine.getMap()));
+                        broadcastTCP(new StartGamePacket());
+                    }
+                } else if (opCode == OpCode.TCP_DISCONNECT) {
                     break;
                 }
             }
@@ -93,7 +93,17 @@ public class ServerNetworkManager {
         } finally {
             gameEngine.removePlayer(client.id);
             clients.remove(client.id);
+            broadcastLobbyUpdate();
             client.close();
+        }
+    }
+
+    private void broadcastLobbyUpdate() {
+        LobbyInfoPacket hostInfo = new LobbyInfoPacket(clients.size(), true);
+        LobbyInfoPacket guestInfo = new LobbyInfoPacket(clients.size(), false);
+        
+        for (ConnectedClient c : clients.values()) {
+            sendTCP(c, c.id == 1 ? hostInfo : guestInfo);
         }
     }
 
@@ -115,14 +125,12 @@ public class ServerNetworkManager {
                     if (client != null) {
                         client.udpAddress = packet.getAddress();
                         client.udpPort = packet.getPort();
-                        System.out.println("[Server] UDP link established for Client " + client.id);
                     }
                 } else if (opCode == OpCode.UDP_INPUT) {
                     InputPacket input = new InputPacket();
                     input.read(dis);
                     gameEngine.handleInput(input.playerId, input.up, input.down, input.left, input.right);
                 }
-
             } catch (IOException e) {
                 if (running) e.printStackTrace();
             }
@@ -138,6 +146,12 @@ public class ServerNetworkManager {
             }
         } catch (IOException e) {
             e.printStackTrace();
+        }
+    }
+
+    public void broadcastTCP(Packet packet) {
+        for (ConnectedClient c : clients.values()) {
+            sendTCP(c, packet);
         }
     }
 

@@ -15,6 +15,10 @@ import com.project137.io.world.DungeonMap;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class ServerEngine {
+    // Filter Bits
+    public static final short BIT_WALL = 1;
+    public static final short BIT_PLAYER = 2;
+
     private final Engine engine;
     private final World world;
     private final ConcurrentHashMap<Integer, Entity> playerEntities = new ConcurrentHashMap<>();
@@ -24,12 +28,10 @@ public class ServerEngine {
     public ServerEngine(ServerNetworkManager networkManager) {
         this.engine = new Engine();
         this.world = new World(new Vector2(0, 0), true);
-        
         // Generate Map
         this.generator = new DungeonGenerator();
-        this.map = generator.generate(50, 50); // 50x50 tiles
-        
-        // Create Static Bodies for Walls
+        this.map = generator.generate(80, 80); 
+
         createWallPhysics();
 
         engine.addSystem(new PhysicsSystem(world));
@@ -47,7 +49,13 @@ public class ServerEngine {
                     Body body = world.createBody(bodyDef);
                     PolygonShape box = new PolygonShape();
                     box.setAsBox(8 / NetworkConfig.PPM, 8 / NetworkConfig.PPM);
-                    body.createFixture(box, 0);
+                    
+                    FixtureDef fdef = new FixtureDef();
+                    fdef.shape = box;
+                    fdef.filter.categoryBits = BIT_WALL;
+                    fdef.filter.maskBits = BIT_PLAYER;
+                    
+                    body.createFixture(fdef);
                     box.dispose();
                 }
             }
@@ -67,12 +75,10 @@ public class ServerEngine {
         
         entity.add(new PlayerComponent());
 
-        // Spawn in the center of the first room
         DungeonGenerator.Room spawnRoom = generator.rooms.get(0);
         float spawnX = (spawnRoom.centerX() * 16 + 8) / NetworkConfig.PPM;
         float spawnY = (spawnRoom.centerY() * 16 + 8) / NetworkConfig.PPM;
 
-        // Create Box2D Body
         BodyDef bodyDef = new BodyDef();
         bodyDef.type = BodyDef.BodyType.DynamicBody;
         bodyDef.position.set(spawnX, spawnY); 
@@ -82,12 +88,13 @@ public class ServerEngine {
         CircleShape circle = new CircleShape();
         circle.setRadius(15f / NetworkConfig.PPM);
         
-        FixtureDef fixtureDef = new FixtureDef();
-        fixtureDef.shape = circle;
-        fixtureDef.density = 1f;
-        fixtureDef.friction = 0f;
+        FixtureDef fdef = new FixtureDef();
+        fdef.shape = circle;
+        fdef.density = 1f;
+        fdef.filter.categoryBits = BIT_PLAYER;
+        fdef.filter.maskBits = BIT_WALL; // Only collide with walls
         
-        body.createFixture(fixtureDef);
+        body.createFixture(fdef);
         circle.dispose();
         
         BodyComponent bc = new BodyComponent();
@@ -114,7 +121,7 @@ public class ServerEngine {
         if (entity != null) {
             BodyComponent bc = entity.getComponent(BodyComponent.class);
             if (bc != null && bc.body != null) {
-                float speed = 5f; // Meters per second
+                float speed = 5f;
                 Vector2 velocity = new Vector2(0, 0);
                 if (up) velocity.y += 1;
                 if (down) velocity.y -= 1;
@@ -128,6 +135,4 @@ public class ServerEngine {
     }
 
     public DungeonMap getMap() { return map; }
-    public Engine getEngine() { return engine; }
-    public World getWorld() { return world; }
 }

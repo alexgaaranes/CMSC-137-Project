@@ -48,6 +48,10 @@ public class GameScreen extends ScreenAdapter {
         this.dungeonRenderer = new DungeonRenderer(shapeRenderer);
     }
 
+    public void setInitialMap(DungeonMap map) {
+        this.map = map;
+    }
+
     @Override
     public void show() {
         game.networkManager.setPacketListener(packet -> {
@@ -92,6 +96,10 @@ public class GameScreen extends ScreenAdapter {
 
         Gdx.gl.glClearColor(0f, 0f, 0f, 1);
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT);
+
+        // Camera Follows Local Player
+        viewport.getCamera().position.set(localX, localY, 0);
+        viewport.getCamera().update();
 
         viewport.apply();
         shapeRenderer.setProjectionMatrix(viewport.getCamera().combined);

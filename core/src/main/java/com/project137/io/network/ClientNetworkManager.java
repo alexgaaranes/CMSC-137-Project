@@ -25,9 +25,7 @@ public class ClientNetworkManager {
         udpSocket = new DatagramSocket();
         running = true;
 
-        // Start TCP listener thread
         Thread.ofVirtual().name("Client-TCP").start(this::listenTCP);
-        // Start UDP listener thread
         Thread.ofVirtual().name("Client-UDP").start(this::listenUDP);
     }
 
@@ -41,14 +39,18 @@ public class ClientNetworkManager {
                     WelcomePacket welcome = new WelcomePacket();
                     welcome.read(tcpIn);
                     this.playerId = welcome.playerId;
-                    System.out.println("[Client] Connected as Player " + playerId);
                     sendUDP(new HelloPacket(playerId));
                     packet = welcome;
                 } else if (opCode == OpCode.TCP_MAP_DATA) {
                     MapDataPacket mapData = new MapDataPacket();
                     mapData.read(tcpIn);
-                    System.out.println("[Client] Map Data Received");
                     packet = mapData;
+                } else if (opCode == OpCode.TCP_LOBBY_INFO) {
+                    LobbyInfoPacket lobbyInfo = new LobbyInfoPacket();
+                    lobbyInfo.read(tcpIn);
+                    packet = lobbyInfo;
+                } else if (opCode == OpCode.TCP_START_GAME) {
+                    packet = new StartGamePacket();
                 }
                 
                 if (packet != null && packetListener != null) {
@@ -82,6 +84,18 @@ public class ClientNetworkManager {
         }
     }
 
+    public void sendTCP(Packet packet) {
+        try {
+            synchronized (tcpOut) {
+                tcpOut.writeByte(packet.getOpCode());
+                packet.write(tcpOut);
+                tcpOut.flush();
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
     public void sendUDP(Packet packet) {
         try {
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
@@ -89,7 +103,8 @@ public class ClientNetworkManager {
             dos.writeByte(packet.getOpCode());
             packet.write(dos);
             byte[] data = baos.toByteArray();
-            DatagramPacket datagramPacket = new DatagramPacket(data, data.length, InetAddress.getByName(NetworkConfig.IP), NetworkConfig.PORT);
+            // Note: In a real app, should use the connected server IP
+            DatagramPacket datagramPacket = new DatagramPacket(data, data.length, tcpSocket.getInetAddress(), NetworkConfig.PORT);
             udpSocket.send(datagramPacket);
         } catch (IOException e) {
             e.printStackTrace();
@@ -106,7 +121,5 @@ public class ClientNetworkManager {
         }
     }
 
-    public int getPlayerId() {
-        return playerId;
-    }
+    public int getPlayerId() { return playerId; }
 }

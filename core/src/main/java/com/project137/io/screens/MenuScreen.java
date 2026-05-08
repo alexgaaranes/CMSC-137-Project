@@ -7,14 +7,15 @@ import com.badlogic.gdx.scenes.scene2d.Stage;
 import com.badlogic.gdx.scenes.scene2d.ui.Skin;
 import com.badlogic.gdx.scenes.scene2d.ui.Table;
 import com.badlogic.gdx.scenes.scene2d.ui.TextButton;
+import com.badlogic.gdx.scenes.scene2d.ui.TextField;
+import com.badlogic.gdx.scenes.scene2d.ui.Label;
 import com.badlogic.gdx.scenes.scene2d.utils.ClickListener;
 import com.badlogic.gdx.scenes.scene2d.InputEvent;
 import com.badlogic.gdx.utils.viewport.ScreenViewport;
 import com.project137.io.Main;
 import com.project137.io.NetworkConfig;
-import java.io.IOException;
-
 import com.project137.io.network.server.ServerNetworkManager;
+import java.io.IOException;
 
 public class MenuScreen extends ScreenAdapter {
     private final Main game;
@@ -35,19 +36,22 @@ public class MenuScreen extends ScreenAdapter {
         table.setFillParent(true);
         stage.addActor(table);
 
+        Label title = new Label("PROJECT-137", skin);
+        
         TextButton hostButton = new TextButton("Host Game", skin);
+        
+        Label ipLabel = new Label("Enter Host IP:", skin);
+        TextField ipField = new TextField("127.0.0.1", skin);
         TextButton joinButton = new TextButton("Join Game", skin);
 
         hostButton.addListener(new ClickListener() {
             @Override
             public void clicked(InputEvent event, float x, float y) {
-                // Start Internal Server
                 ServerNetworkManager server = new ServerNetworkManager();
                 server.start();
-                
                 try {
-                    game.networkManager.connect(NetworkConfig.IP);
-                    game.setScreen(new GameScreen(game));
+                    game.networkManager.connect("127.0.0.1");
+                    game.setScreen(new LobbyScreen(game, true));
                 } catch (IOException e) {
                     e.printStackTrace();
                 }
@@ -58,16 +62,19 @@ public class MenuScreen extends ScreenAdapter {
             @Override
             public void clicked(InputEvent event, float x, float y) {
                 try {
-                    game.networkManager.connect(NetworkConfig.IP);
-                    game.setScreen(new GameScreen(game));
+                    game.networkManager.connect(ipField.getText());
+                    game.setScreen(new LobbyScreen(game, false));
                 } catch (IOException e) {
                     e.printStackTrace();
                 }
             }
         });
 
-        table.add(hostButton).pad(10).width(200);
-        table.row();
+        table.add(title).pad(20).row();
+        table.add(hostButton).pad(10).width(200).row();
+        table.add(new Label("--- OR ---", skin)).pad(10).row();
+        table.add(ipLabel).pad(5).row();
+        table.add(ipField).pad(5).width(200).row();
         table.add(joinButton).pad(10).width(200);
     }
 

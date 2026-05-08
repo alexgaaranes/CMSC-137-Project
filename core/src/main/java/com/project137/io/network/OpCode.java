@@ -4,9 +4,10 @@ public class OpCode {
     // Reliable (TCP) Codes
     public static final byte TCP_WELCOME = 1;
     public static final byte TCP_JOIN_LOBBY = 2;
-    public static final byte TCP_START_GAME = 3;
     public static final byte TCP_MAP_DATA = 4;
     public static final byte TCP_PICKUP_ITEM = 5;
+    public static final byte TCP_LOBBY_INFO = 6;
+    public static final byte TCP_START_GAME = 7;
     public static final byte TCP_DISCONNECT = 99;
 
     // Unreliable (UDP) Codes
