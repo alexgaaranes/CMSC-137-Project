@@ -1,14 +1,12 @@
 package com.project137.io.ecs.systems;
 
 import com.badlogic.ashley.core.ComponentMapper;
-import com.badlogic.ashley.core.Engine;
 import com.badlogic.ashley.core.Entity;
 import com.badlogic.ashley.core.Family;
 import com.badlogic.ashley.systems.IteratingSystem;
 import com.badlogic.gdx.math.Vector2;
 import com.project137.io.ecs.components.BodyComponent;
 import com.project137.io.ecs.components.EnemyComponent;
-import com.project137.io.ecs.components.NetworkComponent;
 import com.project137.io.ecs.components.PlayerComponent;
 
 public class EnemyAISystem extends IteratingSystem {
@@ -25,6 +23,13 @@ public class EnemyAISystem extends IteratingSystem {
         BodyComponent body = bm.get(entity);
         EnemyComponent enemy = em.get(entity);
         
+        // If not active, ensure velocity is zero and skip
+        if (enemy.detectRange <= 0) {
+            enemy.state = EnemyComponent.State.IDLE;
+            body.body.setLinearVelocity(0, 0);
+            return;
+        }
+
         // Find nearest player
         Entity nearestPlayer = null;
         float minDist = enemy.detectRange;
@@ -38,11 +43,11 @@ public class EnemyAISystem extends IteratingSystem {
             }
         }
 
-        if (enemy.detectRange > 0 && nearestPlayer != null) {
+        if (nearestPlayer != null) {
             enemy.state = EnemyComponent.State.CHASE;
             Vector2 pPos = bm.get(nearestPlayer).body.getPosition();
             Vector2 direction = pPos.cpy().sub(body.body.getPosition()).nor();
-            body.body.setLinearVelocity(direction.scl(3f)); // Enemy speed
+            body.body.setLinearVelocity(direction.scl(enemy.speed));
         } else {
             enemy.state = EnemyComponent.State.IDLE;
             body.body.setLinearVelocity(0, 0);

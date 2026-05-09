@@ -10,6 +10,9 @@ public class OpCode {
     public static final byte TCP_START_GAME = 7;
     public static final byte TCP_ENTITY_REMOVE = 8;
     public static final byte TCP_TILE_UPDATE = 9;
+    public static final byte TCP_TELEPORT = 10;
+    public static final byte TCP_WEAPON_CHANGE = 20;
+    public static final byte TCP_ITEM_SPAWN = 21;
     public static final byte TCP_DISCONNECT = 99;
 
     // Unreliable (UDP) Codes
@@ -18,5 +21,5 @@ public class OpCode {
     public static final byte UDP_PLAYER_UPDATE = 11;
     public static final byte UDP_ENEMY_UPDATE = 12;
     public static final byte UDP_BULLET_SPAWN = 13;
-    public static final byte UDP_HEALTH_UPDATE = 14;
+    public static final byte UDP_RESOURCE_UPDATE = 14;
 }

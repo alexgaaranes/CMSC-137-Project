@@ -40,30 +40,50 @@ public class ClientNetworkManager {
                 byte opCode = tcpIn.readByte();
                 Packet packet = null;
                 
-                if (opCode == OpCode.TCP_WELCOME) {
-                    WelcomePacket welcome = new WelcomePacket();
-                    welcome.read(tcpIn);
-                    this.playerId = welcome.playerId;
-                    sendUDP(new HelloPacket(playerId));
-                    packet = welcome;
-                } else if (opCode == OpCode.TCP_MAP_DATA) {
-                    MapDataPacket mapData = new MapDataPacket();
-                    mapData.read(tcpIn);
-                    packet = mapData;
-                } else if (opCode == OpCode.TCP_LOBBY_INFO) {
-                    LobbyInfoPacket lobbyInfo = new LobbyInfoPacket();
-                    lobbyInfo.read(tcpIn);
-                    packet = lobbyInfo;
-                } else if (opCode == OpCode.TCP_START_GAME) {
-                    packet = new StartGamePacket();
-                } else if (opCode == OpCode.TCP_ENTITY_REMOVE) {
-                    EntityRemovePacket remove = new EntityRemovePacket();
-                    remove.read(tcpIn);
-                    packet = remove;
-                } else if (opCode == OpCode.TCP_TILE_UPDATE) {
-                    TileUpdatePacket tileUpdate = new TileUpdatePacket();
-                    tileUpdate.read(tcpIn);
-                    packet = tileUpdate;
+                switch (opCode) {
+                    case OpCode.TCP_WELCOME -> {
+                        WelcomePacket welcome = new WelcomePacket();
+                        welcome.read(tcpIn);
+                        this.playerId = welcome.playerId;
+                        sendUDP(new HelloPacket(playerId));
+                        packet = welcome;
+                    }
+                    case OpCode.TCP_MAP_DATA -> {
+                        MapDataPacket mapData = new MapDataPacket();
+                        mapData.read(tcpIn);
+                        packet = mapData;
+                    }
+                    case OpCode.TCP_LOBBY_INFO -> {
+                        LobbyInfoPacket lobbyInfo = new LobbyInfoPacket();
+                        lobbyInfo.read(tcpIn);
+                        packet = lobbyInfo;
+                    }
+                    case OpCode.TCP_START_GAME -> packet = new StartGamePacket();
+                    case OpCode.TCP_ENTITY_REMOVE -> {
+                        EntityRemovePacket remove = new EntityRemovePacket();
+                        remove.read(tcpIn);
+                        packet = remove;
+                    }
+                    case OpCode.TCP_TILE_UPDATE -> {
+                        TileUpdatePacket tileUpdate = new TileUpdatePacket();
+                        tileUpdate.read(tcpIn);
+                        packet = tileUpdate;
+                    }
+                    case OpCode.TCP_TELEPORT -> {
+                        TeleportPacket tp = new TeleportPacket();
+                        tp.read(tcpIn);
+                        packet = tp;
+                    }
+                    case OpCode.TCP_WEAPON_CHANGE -> {
+                        WeaponChangePacket wc = new WeaponChangePacket();
+                        wc.read(tcpIn);
+                        packet = wc;
+                    }
+                    case OpCode.TCP_ITEM_SPAWN -> {
+                        ItemSpawnPacket is = new ItemSpawnPacket();
+                        is.read(tcpIn);
+                        packet = is;
+                    }
                 }
                 
                 if (packet != null && packetListener != null) {
@@ -71,7 +91,7 @@ public class ClientNetworkManager {
                 }
             }
         } catch (IOException e) {
-            System.out.println("[Client] Server connection lost.");
+            System.out.println("[Client] TCP connection lost: " + e.getMessage());
             handleDisconnect();
         }
     }
@@ -83,7 +103,7 @@ public class ClientNetworkManager {
     }
 
     private void listenUDP() {
-        byte[] buffer = new byte[1024];
+        byte[] buffer = new byte[2048]; // Larger buffer
         while (running) {
             try {
                 DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
@@ -93,10 +113,16 @@ public class ClientNetworkManager {
                 DataInputStream dis = new DataInputStream(bais);
                 byte opCode = dis.readByte();
 
+                Packet udpPacket = null;
                 if (opCode == OpCode.UDP_PLAYER_UPDATE) {
-                    PlayerUpdatePacket update = new PlayerUpdatePacket();
-                    update.read(dis);
-                    if (packetListener != null) packetListener.accept(update);
+                    udpPacket = new PlayerUpdatePacket();
+                } else if (opCode == OpCode.UDP_RESOURCE_UPDATE) {
+                    udpPacket = new ResourceUpdatePacket();
+                }
+
+                if (udpPacket != null) {
+                    udpPacket.read(dis);
+                    if (packetListener != null) packetListener.accept(udpPacket);
                 }
             } catch (IOException e) {
                 if (running) handleDisconnect();

@@ -5,6 +5,8 @@ import com.badlogic.gdx.Input;
 import com.badlogic.gdx.ScreenAdapter;
 import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.GL20;
+import com.badlogic.gdx.graphics.g2d.BitmapFont;
+import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.math.Vector2;
@@ -16,12 +18,7 @@ import com.badlogic.gdx.scenes.scene2d.ui.Table;
 import com.badlogic.gdx.utils.viewport.ExtendViewport;
 import com.badlogic.gdx.utils.viewport.ScreenViewport;
 import com.project137.io.Main;
-import com.project137.io.network.InputPacket;
-import com.project137.io.network.MapDataPacket;
-import com.project137.io.network.PlayerUpdatePacket;
-import com.project137.io.network.EntityRemovePacket;
-import com.project137.io.network.HealthUpdatePacket;
-import com.project137.io.network.TileUpdatePacket;
+import com.project137.io.network.*;
 import com.project137.io.world.DungeonMap;
 import com.project137.io.world.DungeonRenderer;
 
@@ -32,6 +29,8 @@ import java.util.concurrent.ConcurrentHashMap;
 public class GameScreen extends ScreenAdapter {
     private final Main game;
     private final ShapeRenderer shapeRenderer;
+    private final SpriteBatch spriteBatch;
+    private final BitmapFont font;
     private final ExtendViewport viewport;
     private final DungeonRenderer dungeonRenderer;
     private DungeonMap map;
@@ -39,7 +38,9 @@ public class GameScreen extends ScreenAdapter {
     private Stage hudStage;
     private Skin skin;
     private Label healthLabel;
-    private float currentHP = 100;
+    private Label energyLabel;
+    private Label weaponLabel;
+    private float currentHP = 100, currentEnergy = 200;
     
     private final ConcurrentHashMap<Integer, EntityState> entities = new ConcurrentHashMap<>();
     private final Set<Integer> removedIds = new HashSet<>();
@@ -47,10 +48,12 @@ public class GameScreen extends ScreenAdapter {
     private float localX = 0, localY = 0;
     private float aimAngle = 0;
     private final float MOVE_SPEED = 200f; 
+    private boolean debugEnabled = false;
 
     private static class EntityState {
         float x, y, angle, targetX, targetY;
         long lastSequence = -1;
+        String templateId;
 
         public EntityState(float x, float y) {
             this.x = x;
@@ -63,6 +66,9 @@ public class GameScreen extends ScreenAdapter {
     public GameScreen(Main game) {
         this.game = game;
         this.shapeRenderer = new ShapeRenderer();
+        this.spriteBatch = new SpriteBatch();
+        this.font = new BitmapFont();
+        this.font.getData().setScale(0.8f);
         this.viewport = new ExtendViewport(640, 480);
         this.dungeonRenderer = new DungeonRenderer(shapeRenderer);
     }
@@ -79,7 +85,12 @@ public class GameScreen extends ScreenAdapter {
         table.top().left();
         table.setFillParent(true);
         healthLabel = new Label("HP: 100/100", skin);
-        table.add(healthLabel).pad(10);
+        energyLabel = new Label("Energy: 200/200", skin);
+        weaponLabel = new Label("Weapon: Starter Pistol", skin);
+        
+        table.add(healthLabel).pad(10).left().row();
+        table.add(energyLabel).pad(10).left().row();
+        table.add(weaponLabel).pad(10).left().expandX();
         hudStage.addActor(table);
 
         game.networkManager.setOnDisconnect(() -> Gdx.app.postRunnable(() -> game.setScreen(new MenuScreen(game))));
@@ -90,14 +101,33 @@ public class GameScreen extends ScreenAdapter {
                 this.map.tiles = mapPacket.tiles;
             } else if (packet instanceof EntityRemovePacket remove) {
                 entities.remove(remove.entityId);
-                synchronized (removedIds) {
-                    removedIds.add(remove.entityId);
+                // Only block high-frequency removals (bullets, enemies)
+                if (remove.entityId >= 1000) {
+                    synchronized (removedIds) { removedIds.add(remove.entityId); }
                 }
-            } else if (packet instanceof HealthUpdatePacket health) {
-                if (health.entityId == game.networkManager.getPlayerId()) {
-                    currentHP = health.currentHealth;
-                    Gdx.app.postRunnable(() -> healthLabel.setText("HP: " + (int)currentHP + "/100"));
+            } else if (packet instanceof TeleportPacket tp) {
+                if (tp.playerId == game.networkManager.getPlayerId()) {
+                    localX = tp.x;
+                    localY = tp.y;
                 }
+            } else if (packet instanceof ResourceUpdatePacket res) {
+                if (res.playerId == game.networkManager.getPlayerId()) {
+                    currentHP = res.hp;
+                    currentEnergy = res.energy;
+                    Gdx.app.postRunnable(() -> {
+                        healthLabel.setText("HP: " + (int)currentHP + "/100");
+                        energyLabel.setText("Energy: " + (int)currentEnergy + "/200");
+                    });
+                }
+            } else if (packet instanceof WeaponChangePacket wchange) {
+                if (wchange.playerId == game.networkManager.getPlayerId()) {
+                    String active = wchange.activeSlot == 0 ? wchange.slot0 : wchange.slot1;
+                    Gdx.app.postRunnable(() -> weaponLabel.setText("Weapon: " + active));
+                }
+            } else if (packet instanceof ItemSpawnPacket item) {
+                EntityState es = new EntityState(item.x, item.y);
+                es.templateId = item.templateId;
+                entities.put(item.entityId, es);
             } else if (packet instanceof TileUpdatePacket tileUpdate) {
                 if (this.map != null) this.map.tiles[tileUpdate.x][tileUpdate.y] = tileUpdate.tile;
             } else if (packet instanceof PlayerUpdatePacket update) {
@@ -119,7 +149,7 @@ public class GameScreen extends ScreenAdapter {
                     
                     if (update.playerId == game.networkManager.getPlayerId()) {
                         float dist = Vector2.dst(localX, localY, es.targetX, es.targetY);
-                        if (dist > 30) {
+                        if (dist > 60) { // Increased threshold for massive rooms
                             localX = es.targetX;
                             localY = es.targetY;
                         } else if (dist > 2) {
@@ -134,6 +164,8 @@ public class GameScreen extends ScreenAdapter {
 
     @Override
     public void render(float delta) {
+        if (Gdx.input.isKeyJustPressed(Input.Keys.F3)) debugEnabled = !debugEnabled;
+
         handleLocalMovement(delta);
         updateInterpolation(delta);
         updateAimAngle();
@@ -152,7 +184,6 @@ public class GameScreen extends ScreenAdapter {
 
         shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
         
-        // Aim Indicator
         shapeRenderer.setColor(Color.WHITE);
         float indicatorX = localX + MathUtils.cosDeg(aimAngle) * 35;
         float indicatorY = localY + MathUtils.sinDeg(aimAngle) * 35;
@@ -175,13 +206,24 @@ public class GameScreen extends ScreenAdapter {
             } else if (id < 4000) {
                 shapeRenderer.setColor(Color.BROWN);
                 shapeRenderer.rect(es.x - 7, es.y - 7, 14, 14);
+            } else if (id >= 5000) {
+                shapeRenderer.setColor(Color.GOLD);
+                shapeRenderer.rect(es.x - 6, es.y - 6, 12, 12);
             }
         }
         shapeRenderer.end();
         
-        // UI layer
-        shapeRenderer.setProjectionMatrix(new com.badlogic.gdx.math.Matrix4().setToOrtho2D(0, 0, Gdx.graphics.getWidth(), Gdx.graphics.getHeight()));
+        if (debugEnabled) {
+            spriteBatch.setProjectionMatrix(viewport.getCamera().combined);
+            spriteBatch.begin();
+            for (Integer id : entities.keySet()) {
+                EntityState es = entities.get(id);
+                font.draw(spriteBatch, "ID:" + id + (es.templateId != null ? "\n" + es.templateId : ""), es.x + 15, es.y + 15);
+            }
+            spriteBatch.end();
+        }
         
+        shapeRenderer.setProjectionMatrix(new com.badlogic.gdx.math.Matrix4().setToOrtho2D(0, 0, Gdx.graphics.getWidth(), Gdx.graphics.getHeight()));
         java.util.List<Vector2> otherPlayers = new java.util.ArrayList<>();
         for (Integer id : entities.keySet()) {
             if (id != game.networkManager.getPlayerId() && id < 10) {
@@ -231,10 +273,12 @@ public class GameScreen extends ScreenAdapter {
         boolean left = Gdx.input.isKeyPressed(Input.Keys.A);
         boolean right = Gdx.input.isKeyPressed(Input.Keys.D);
         boolean attack = Gdx.input.isTouched();
+        boolean swap = Gdx.input.isKeyJustPressed(Input.Keys.Q);
+        boolean interact = Gdx.input.isKeyJustPressed(Input.Keys.E);
 
         game.networkManager.sendUDP(new InputPacket(
             game.networkManager.getPlayerId(),
-            up, down, left, right, attack, aimAngle
+            up, down, left, right, attack, swap, interact, aimAngle
         ));
     }
 
@@ -247,6 +291,8 @@ public class GameScreen extends ScreenAdapter {
     @Override
     public void dispose() {
         shapeRenderer.dispose();
+        spriteBatch.dispose();
+        font.dispose();
         hudStage.dispose();
         skin.dispose();
     }
