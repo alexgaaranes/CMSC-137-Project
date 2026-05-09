@@ -6,6 +6,9 @@ import com.badlogic.gdx.math.Vector2;
 import com.badlogic.gdx.physics.box2d.*;
 import com.project137.io.NetworkConfig;
 import com.project137.io.ecs.components.*;
+import com.project137.io.ecs.data.DataManager;
+import com.project137.io.ecs.data.EnemyTemplate;
+import com.project137.io.ecs.data.WeaponTemplate;
 import com.project137.io.ecs.systems.*;
 import com.project137.io.network.EntityRemovePacket;
 import com.project137.io.network.InputPacket;
@@ -16,6 +19,7 @@ import com.project137.io.world.DungeonMap;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Random;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -38,6 +42,7 @@ public class ServerEngine {
     private final DungeonMap map;
     private final DungeonGenerator generator;
     private final ServerNetworkManager networkManager;
+    private final Random random = new Random();
     
     private final List<Entity> removalQueue = new ArrayList<>();
     private final List<Body> gateBodies = new ArrayList<>();
@@ -46,6 +51,14 @@ public class ServerEngine {
         this.networkManager = networkManager;
         this.engine = new Engine();
         this.world = new World(new Vector2(0, 0), true);
+        
+        // Initial Data Load (Assuming running on Host with Gdx context)
+        try {
+            DataManager.load();
+        } catch (Exception e) {
+            System.err.println("[Server] Failed to load DataManager: " + e.getMessage());
+        }
+
         this.generator = new DungeonGenerator();
         this.map = generator.generate(160, 160); 
         
@@ -99,7 +112,7 @@ public class ServerEngine {
         bodyDef.position.set((tx * 16 + 8) / NetworkConfig.PPM, (ty * 16 + 8) / NetworkConfig.PPM);
         Body body = world.createBody(bodyDef);
         PolygonShape box = new PolygonShape();
-        box.setAsBox(7 / NetworkConfig.PPM, 7 / NetworkConfig.PPM); // Consistent with floor grid
+        box.setAsBox(7 / NetworkConfig.PPM, 7 / NetworkConfig.PPM);
         FixtureDef fdef = new FixtureDef();
         fdef.shape = box;
         fdef.filter.categoryBits = BIT_CRATE;
@@ -116,16 +129,20 @@ public class ServerEngine {
     }
 
     private void spawnInitialEnemies() {
+        ArrayList<EnemyTemplate> templates = DataManager.getAllEnemies();
+        if (templates.isEmpty()) return;
+
         for (DungeonGenerator.Room room : generator.rooms) {
             if (room.type == DungeonGenerator.RoomType.ENEMY) {
                 for (int i = 0; i < 4; i++) {
-                    spawnEnemy(room.x + 4 + i % 2 * 6, room.y + 4 + i / 2 * 6);
+                    EnemyTemplate t = templates.get(random.nextInt(templates.size()));
+                    spawnEnemyFromTemplate(t, room.x + 8 + i % 2 * 12, room.y + 8 + i / 2 * 12);
                 }
             }
         }
     }
 
-    private void spawnEnemy(int tx, int ty) {
+    private void spawnEnemyFromTemplate(EnemyTemplate t, int tx, int ty) {
         int id = nextEnemyId.getAndIncrement();
         Entity entity = new Entity();
         NetworkComponent net = new NetworkComponent();
@@ -135,7 +152,7 @@ public class ServerEngine {
         EnemyComponent enemy = new EnemyComponent();
         enemy.detectRange = 0; 
         entity.add(enemy);
-        entity.add(new HealthComponent(40f)); // More health
+        entity.add(new HealthComponent(t.hp));
         
         BodyDef bodyDef = new BodyDef();
         bodyDef.type = BodyDef.BodyType.DynamicBody;
@@ -144,7 +161,7 @@ public class ServerEngine {
         Body body = world.createBody(bodyDef);
         
         CircleShape circle = new CircleShape();
-        circle.setRadius(14f / NetworkConfig.PPM); // Larger enemy (almost player size)
+        circle.setRadius(14f / NetworkConfig.PPM);
         
         FixtureDef fdef = new FixtureDef();
         fdef.shape = circle;
@@ -162,7 +179,7 @@ public class ServerEngine {
         entities.put(id, entity);
     }
 
-    public void spawnProjectile(int ownerId, float x, float y, float angle, float damage) {
+    public void spawnProjectile(int ownerId, float x, float y, float angle, float damage, float speed) {
         int id = nextProjectileId.getAndIncrement();
         Entity entity = new Entity();
         NetworkComponent net = new NetworkComponent();
@@ -189,7 +206,7 @@ public class ServerEngine {
         body.setUserData(entity);
         circle.dispose();
         
-        Vector2 velocity = new Vector2(1, 0).setAngleDeg(angle).scl(12f);
+        Vector2 velocity = new Vector2(1, 0).setAngleDeg(angle).scl(speed);
         body.setLinearVelocity(velocity);
         
         BodyComponent bc = new BodyComponent();
@@ -399,7 +416,7 @@ public class ServerEngine {
             WeaponComponent wc = entity.getComponent(WeaponComponent.class);
 
             if (bc != null && bc.body != null) {
-                float speed = 5f;
+                float speed = 6.25f;
                 Vector2 velocity = new Vector2(0, 0);
                 if (input.up) velocity.y += 1;
                 if (input.down) velocity.y -= 1;
@@ -409,7 +426,7 @@ public class ServerEngine {
                 bc.body.setLinearVelocity(velocity);
 
                 if (input.attack && wc != null && wc.cooldown <= 0) {
-                    spawnProjectile(playerId, bc.body.getPosition().x, bc.body.getPosition().y, input.targetAngle, wc.damage);
+                    spawnProjectile(playerId, bc.body.getPosition().x, bc.body.getPosition().y, input.targetAngle, wc.damage, wc.projectileSpeed);
                     wc.cooldown = wc.fireRate;
                 }
             }
@@ -426,7 +443,16 @@ public class ServerEngine {
         net.id = playerId;
         entity.add(net);
         entity.add(new PlayerComponent());
-        entity.add(new WeaponComponent());
+        
+        WeaponComponent wc = new WeaponComponent();
+        WeaponTemplate starter = DataManager.getWeapon("starter_pistol");
+        if (starter != null) {
+            wc.damage = starter.damage;
+            wc.fireRate = starter.fireRate;
+            wc.projectileSpeed = starter.projectileSpeed;
+        }
+        entity.add(wc);
+        
         entity.add(new HealthComponent(100f));
         
         DungeonGenerator.Room spawnRoom = generator.rooms.get(0);

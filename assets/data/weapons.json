@@ -1,0 +1,26 @@
+[
+  {
+    "id": "starter_pistol",
+    "name": "Starter Pistol",
+    "damage": 10,
+    "fireRate": 0.5,
+    "projectileSpeed": 12,
+    "energyCost": 0
+  },
+  {
+    "id": "fast_smg",
+    "name": "Fast SMG",
+    "damage": 5,
+    "fireRate": 0.1,
+    "projectileSpeed": 15,
+    "energyCost": 1
+  },
+  {
+    "id": "heavy_cannon",
+    "name": "Heavy Cannon",
+    "damage": 50,
+    "fireRate": 1.5,
+    "projectileSpeed": 8,
+    "energyCost": 5
+  }
+]

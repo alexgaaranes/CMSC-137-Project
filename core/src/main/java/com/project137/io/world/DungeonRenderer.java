@@ -30,7 +30,7 @@ public class DungeonRenderer {
                     shapeRenderer.rect(x * 16, y * 16, 16, 16);
                 } else if (tile == DungeonMap.TILE_CRATE) {
                     shapeRenderer.setColor(Color.BROWN);
-                    shapeRenderer.rect(x * 16 + 1, y * 16 + 1, 14, 14); // Larger crate
+                    shapeRenderer.rect(x * 16 + 1, y * 16 + 1, 14, 14);
                 }
             }
         }
@@ -43,9 +43,9 @@ public class DungeonRenderer {
         int px = (int)(localX / 16);
         int py = (int)(localY / 16);
         
-        // Update explored
-        for (int dx = -6; dx <= 6; dx++) {
-            for (int dy = -6; dy <= 6; dy++) {
+        // Fog of War (slightly larger reveal radius)
+        for (int dx = -8; dx <= 8; dx++) {
+            for (int dy = -8; dy <= 8; dy++) {
                 int nx = px + dx;
                 int ny = py + dy;
                 if (nx >= 0 && nx < map.width && ny >= 0 && ny < map.height) {
@@ -54,16 +54,15 @@ public class DungeonRenderer {
             }
         }
 
-        float tileSize = 4f;
-        int viewRadius = 15; // Number of tiles visible in minimap
+        float tileSize = 2.5f; // Scaled down for more coverage
+        int viewRadius = 30; // Doubled coverage (60x60 tiles view)
         float minimapSize = viewRadius * 2 * tileSize;
-        float offsetX = 10, offsetY = 480 - minimapSize - 10; // Top Left (relative to screen)
-        // Wait, LibGDX screen Y is bottom-up. Top-left is (10, 480 - 10 - size).
+        float offsetX = 10, offsetY = 480 - minimapSize - 10;
 
         shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
         
         // Background
-        shapeRenderer.setColor(0, 0, 0, 0.5f);
+        shapeRenderer.setColor(0, 0, 0, 0.6f);
         shapeRenderer.rect(offsetX, offsetY, minimapSize, minimapSize);
 
         for (int dx = -viewRadius; dx <= viewRadius; dx++) {
@@ -74,7 +73,8 @@ public class DungeonRenderer {
                 if (tx >= 0 && tx < map.width && ty >= 0 && ty < map.height && map.explored[tx][ty]) {
                     int tile = map.tiles[tx][ty];
                     if (tile == DungeonMap.TILE_WALL || tile == DungeonMap.TILE_GATE) shapeRenderer.setColor(Color.WHITE);
-                    else if (tile == DungeonMap.TILE_FLOOR) shapeRenderer.setColor(Color.BLUE);
+                    else if (tile == DungeonMap.TILE_FLOOR) shapeRenderer.setColor(0.2f, 0.4f, 0.8f, 1f); // Darker blue floor
+                    else if (tile == DungeonMap.TILE_CRATE) shapeRenderer.setColor(Color.BROWN);
                     else continue;
                     
                     float rx = offsetX + (dx + viewRadius) * tileSize;
@@ -86,7 +86,7 @@ public class DungeonRenderer {
         
         // Local Player (Yellow)
         shapeRenderer.setColor(Color.YELLOW);
-        shapeRenderer.circle(offsetX + viewRadius * tileSize, offsetY + viewRadius * tileSize, 2f);
+        shapeRenderer.circle(offsetX + viewRadius * tileSize, offsetY + viewRadius * tileSize, 2.5f);
 
         // Other Players (Red)
         shapeRenderer.setColor(Color.RED);

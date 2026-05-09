@@ -46,7 +46,7 @@ public class GameScreen extends ScreenAdapter {
     
     private float localX = 0, localY = 0;
     private float aimAngle = 0;
-    private final float MOVE_SPEED = 160f; 
+    private final float MOVE_SPEED = 200f; 
 
     private static class EntityState {
         float x, y, angle, targetX, targetY;
