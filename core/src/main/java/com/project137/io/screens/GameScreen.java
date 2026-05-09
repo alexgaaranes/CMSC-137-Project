@@ -52,6 +52,7 @@ public class GameScreen extends ScreenAdapter {
 
     private static class EntityState {
         float x, y, angle, targetX, targetY;
+        float hp = -1; // -1 means unknown
         long lastSequence = -1;
         String templateId;
 
@@ -101,7 +102,6 @@ public class GameScreen extends ScreenAdapter {
                 this.map.tiles = mapPacket.tiles;
             } else if (packet instanceof EntityRemovePacket remove) {
                 entities.remove(remove.entityId);
-                // Only block high-frequency removals (bullets, enemies)
                 if (remove.entityId >= 1000) {
                     synchronized (removedIds) { removedIds.add(remove.entityId); }
                 }
@@ -111,6 +111,7 @@ public class GameScreen extends ScreenAdapter {
                     localY = tp.y;
                 }
             } else if (packet instanceof ResourceUpdatePacket res) {
+                // Update local player stats
                 if (res.playerId == game.networkManager.getPlayerId()) {
                     currentHP = res.hp;
                     currentEnergy = res.energy;
@@ -118,6 +119,12 @@ public class GameScreen extends ScreenAdapter {
                         healthLabel.setText("HP: " + (int)currentHP + "/100");
                         energyLabel.setText("Energy: " + (int)currentEnergy + "/200");
                     });
+                }
+                
+                // Track HP for all entities for debug HUD
+                EntityState es = entities.get(res.playerId);
+                if (es != null) {
+                    es.hp = res.hp;
                 }
             } else if (packet instanceof WeaponChangePacket wchange) {
                 if (wchange.playerId == game.networkManager.getPlayerId()) {
@@ -149,7 +156,7 @@ public class GameScreen extends ScreenAdapter {
                     
                     if (update.playerId == game.networkManager.getPlayerId()) {
                         float dist = Vector2.dst(localX, localY, es.targetX, es.targetY);
-                        if (dist > 60) { // Increased threshold for massive rooms
+                        if (dist > 60) {
                             localX = es.targetX;
                             localY = es.targetY;
                         } else if (dist > 2) {
@@ -218,7 +225,10 @@ public class GameScreen extends ScreenAdapter {
             spriteBatch.begin();
             for (Integer id : entities.keySet()) {
                 EntityState es = entities.get(id);
-                font.draw(spriteBatch, "ID:" + id + (es.templateId != null ? "\n" + es.templateId : ""), es.x + 15, es.y + 15);
+                String debugText = "ID:" + id;
+                if (es.templateId != null) debugText += "\n" + es.templateId;
+                if (es.hp >= 0) debugText += "\nHP:" + (int)es.hp;
+                font.draw(spriteBatch, debugText, es.x + 15, es.y + 15);
             }
             spriteBatch.end();
         }
