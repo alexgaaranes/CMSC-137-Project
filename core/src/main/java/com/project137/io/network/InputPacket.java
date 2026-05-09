@@ -6,16 +6,17 @@ import java.io.IOException;
 
 public class InputPacket implements Packet {
     public int playerId;
-    public boolean up, down, left, right;
+    public boolean up, down, left, right, attack;
     public float targetAngle;
 
     public InputPacket() {}
-    public InputPacket(int playerId, boolean up, boolean down, boolean left, boolean right, float targetAngle) {
+    public InputPacket(int playerId, boolean up, boolean down, boolean left, boolean right, boolean attack, float targetAngle) {
         this.playerId = playerId;
         this.up = up;
         this.down = down;
         this.left = left;
         this.right = right;
+        this.attack = attack;
         this.targetAngle = targetAngle;
     }
 
@@ -26,6 +27,7 @@ public class InputPacket implements Packet {
         out.writeBoolean(down);
         out.writeBoolean(left);
         out.writeBoolean(right);
+        out.writeBoolean(attack);
         out.writeFloat(targetAngle);
     }
 
@@ -36,6 +38,7 @@ public class InputPacket implements Packet {
         down = in.readBoolean();
         left = in.readBoolean();
         right = in.readBoolean();
+        attack = in.readBoolean();
         targetAngle = in.readFloat();
     }
 

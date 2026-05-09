@@ -129,7 +129,7 @@ public class ServerNetworkManager {
                 } else if (opCode == OpCode.UDP_INPUT) {
                     InputPacket input = new InputPacket();
                     input.read(dis);
-                    gameEngine.handleInput(input.playerId, input.up, input.down, input.left, input.right);
+                    gameEngine.queueInput(input);
                 }
             } catch (IOException e) {
                 if (running) e.printStackTrace();

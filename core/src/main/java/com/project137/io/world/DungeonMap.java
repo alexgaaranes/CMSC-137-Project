@@ -7,6 +7,8 @@ public class DungeonMap implements Serializable {
     public static final int TILE_FLOOR = 1;
     public static final int TILE_WALL = 2;
     public static final int TILE_DOOR = 3;
+    public static final int TILE_GATE = 4;
+    public static final int TILE_CRATE = 5;
 
     public int width, height;
     public int[][] tiles;

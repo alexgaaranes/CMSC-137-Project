@@ -13,9 +13,14 @@ public class ClientNetworkManager {
     private int playerId;
     private boolean running = false;
     private Consumer<Packet> packetListener;
+    private Runnable onDisconnect;
 
     public void setPacketListener(Consumer<Packet> listener) {
         this.packetListener = listener;
+    }
+
+    public void setOnDisconnect(Runnable callback) {
+        this.onDisconnect = callback;
     }
 
     public void connect(String ip) throws IOException {
@@ -51,6 +56,14 @@ public class ClientNetworkManager {
                     packet = lobbyInfo;
                 } else if (opCode == OpCode.TCP_START_GAME) {
                     packet = new StartGamePacket();
+                } else if (opCode == OpCode.TCP_ENTITY_REMOVE) {
+                    EntityRemovePacket remove = new EntityRemovePacket();
+                    remove.read(tcpIn);
+                    packet = remove;
+                } else if (opCode == OpCode.TCP_TILE_UPDATE) {
+                    TileUpdatePacket tileUpdate = new TileUpdatePacket();
+                    tileUpdate.read(tcpIn);
+                    packet = tileUpdate;
                 }
                 
                 if (packet != null && packetListener != null) {
@@ -58,8 +71,15 @@ public class ClientNetworkManager {
                 }
             }
         } catch (IOException e) {
-            if (running) System.out.println("[Client] Disconnected from server.");
+            System.out.println("[Client] Server connection lost.");
+            handleDisconnect();
         }
+    }
+
+    private void handleDisconnect() {
+        if (!running) return;
+        running = false;
+        if (onDisconnect != null) onDisconnect.run();
     }
 
     private void listenUDP() {
@@ -79,12 +99,13 @@ public class ClientNetworkManager {
                     if (packetListener != null) packetListener.accept(update);
                 }
             } catch (IOException e) {
-                if (running) e.printStackTrace();
+                if (running) handleDisconnect();
             }
         }
     }
 
     public void sendTCP(Packet packet) {
+        if (!running) return;
         try {
             synchronized (tcpOut) {
                 tcpOut.writeByte(packet.getOpCode());
@@ -92,22 +113,22 @@ public class ClientNetworkManager {
                 tcpOut.flush();
             }
         } catch (IOException e) {
-            e.printStackTrace();
+            handleDisconnect();
         }
     }
 
     public void sendUDP(Packet packet) {
+        if (!running) return;
         try {
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
             DataOutputStream dos = new DataOutputStream(baos);
             dos.writeByte(packet.getOpCode());
             packet.write(dos);
             byte[] data = baos.toByteArray();
-            // Note: In a real app, should use the connected server IP
             DatagramPacket datagramPacket = new DatagramPacket(data, data.length, tcpSocket.getInetAddress(), NetworkConfig.PORT);
             udpSocket.send(datagramPacket);
         } catch (IOException e) {
-            e.printStackTrace();
+            // UDP silent failure usually ok
         }
     }
 
