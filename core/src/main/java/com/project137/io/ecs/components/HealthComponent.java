@@ -10,4 +10,12 @@ public class HealthComponent implements Component {
         this.maxHealth = health;
         this.currentHealth = health;
     }
+
+    public boolean isAlive() {
+        return currentHealth > 0;
+    }
+
+    public void takeDamage(float damage) {
+        currentHealth = Math.max(0, currentHealth - damage);
+    }
 }

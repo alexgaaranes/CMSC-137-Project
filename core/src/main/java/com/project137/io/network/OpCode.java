@@ -10,7 +10,11 @@ public class OpCode {
     public static final byte TCP_START_GAME = 7;
     public static final byte TCP_ENTITY_REMOVE = 8;
     public static final byte TCP_TILE_UPDATE = 9;
-    public static final byte TCP_TELEPORT = 10;
+    public static final byte TCP_GAME_OVER = 10;
+    public static final byte TCP_TELEPORT = 11;
+    public static final byte TCP_BUFF_VOTE_START = 12;
+    public static final byte TCP_BUFF_VOTE_SUBMIT = 13;
+    public static final byte TCP_BUFF_VOTE_RESULT = 14;
     public static final byte TCP_WEAPON_CHANGE = 20;
     public static final byte TCP_ITEM_SPAWN = 21;
     public static final byte TCP_DISCONNECT = 99;
