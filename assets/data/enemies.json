@@ -6,7 +6,7 @@
     "speed": 3,
     "detectRange": 500,
     "color": "PURPLE",
-    "damage": 10,
+    "damage": 5,
     "attackRate": 1.0
   },
   {
@@ -16,7 +16,7 @@
     "speed": 4.5,
     "detectRange": 800,
     "color": "RED",
-    "damage": 20,
+    "damage": 10,
     "attackRate": 1.5
   }
 ]

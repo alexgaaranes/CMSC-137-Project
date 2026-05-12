@@ -297,11 +297,15 @@ public class ServerEngine {
     private void checkHit(Entity projectile, Entity target) {
         ProjectileComponent pc = projectile.getComponent(ProjectileComponent.class);
         HealthComponent hc = target.getComponent(HealthComponent.class);
-        if (pc != null && hc != null) {
-            hc.currentHealth -= pc.damage;
+        if (pc != null && hc != null && hc.isAlive()) {
+            hc.takeDamage(pc.damage);
             synchronized (removalQueue) {
                 if (!removalQueue.contains(projectile)) removalQueue.add(projectile);
-                if (hc.currentHealth <= 0 && !removalQueue.contains(target)) removalQueue.add(target);
+                if (hc.currentHealth <= 0 && !removalQueue.contains(target)) {
+                    if (target.getComponent(PlayerComponent.class) == null) {
+                        removalQueue.add(target);
+                    }
+                }
             }
         }
     }
@@ -660,6 +664,21 @@ public class ServerEngine {
             BodyComponent bc = entity.getComponent(BodyComponent.class);
             if (bc != null && bc.body != null) world.destroyBody(bc.body);
             engine.removeEntity(entity);
+        }
+    }
+
+    public void startGame() {
+        this.gameOver = false;
+        // Also reset any existing players just in case
+        for (Entity entity : entities.values()) {
+            PlayerComponent pc = entity.getComponent(PlayerComponent.class);
+            if (pc != null) {
+                pc.isDead = false;
+                pc.reviveProgress = 0;
+                pc.reviverId = null;
+                HealthComponent hc = entity.getComponent(HealthComponent.class);
+                if (hc != null) hc.currentHealth = hc.maxHealth;
+            }
         }
     }
 

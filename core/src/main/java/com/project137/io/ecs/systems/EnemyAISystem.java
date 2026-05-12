@@ -13,7 +13,8 @@ import com.project137.io.ecs.components.HealthComponent;
 public class EnemyAISystem extends IteratingSystem {
     private final ComponentMapper<BodyComponent> bm = ComponentMapper.getFor(BodyComponent.class);
     private final ComponentMapper<EnemyComponent> em = ComponentMapper.getFor(EnemyComponent.class);
-    private final Family playerFamily = Family.all(PlayerComponent.class, BodyComponent.class).get();
+    private final ComponentMapper<HealthComponent> hm = ComponentMapper.getFor(HealthComponent.class);
+    private final Family playerFamily = Family.all(PlayerComponent.class, BodyComponent.class, HealthComponent.class).get();
 
     public EnemyAISystem() {
         super(Family.all(EnemyComponent.class, BodyComponent.class).get());
@@ -40,6 +41,9 @@ public class EnemyAISystem extends IteratingSystem {
         float minDist = enemy.detectRange;
         
         for (Entity player : getEngine().getEntitiesFor(playerFamily)) {
+            HealthComponent hc = player.getComponent(HealthComponent.class);
+            if (hc == null || !hc.isAlive()) continue;
+
             BodyComponent pBody = bm.get(player);
             float dist = body.body.getPosition().dst(pBody.body.getPosition());
             if (dist < minDist) {
@@ -55,9 +59,9 @@ public class EnemyAISystem extends IteratingSystem {
             body.body.setLinearVelocity(direction.scl(enemy.speed));
             
             if (minDist < 1.2f && enemy.attackCooldown <= 0) {
-                HealthComponent hc = nearestPlayer.getComponent(HealthComponent.class);
-                if (hc != null) {
-                    hc.currentHealth -= enemy.damage;
+                HealthComponent hc = hm.get(nearestPlayer);
+                if (hc != null && hc.isAlive()) {
+                    hc.takeDamage(enemy.damage);
                     enemy.attackCooldown = enemy.attackRate;
                 }
             }

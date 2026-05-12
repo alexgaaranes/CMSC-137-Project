@@ -81,6 +81,7 @@ public class ServerNetworkManager {
                 if (opCode == OpCode.TCP_START_GAME) {
                     // Only Host (Client ID 1) can start the game
                     if (client.id == 1) {
+                        gameEngine.startGame();
                         broadcastTCP(new MapDataPacket(gameEngine.getMap()));
                         broadcastTCP(new StartGamePacket());
                     }
