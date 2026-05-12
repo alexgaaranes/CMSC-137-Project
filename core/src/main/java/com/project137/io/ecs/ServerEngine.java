@@ -271,6 +271,8 @@ public class ServerEngine {
                 if (ua instanceof Entity ea && ub instanceof Entity eb) {
                     checkHit(ea, eb);
                     checkHit(eb, ea);
+                    checkPickup(ea, eb);
+                    checkPickup(eb, ea);
                 }
                 checkWallHit(fa, fb);
                 checkWallHit(fb, fa);
@@ -289,6 +291,20 @@ public class ServerEngine {
             if (pc != null && (category == BIT_WALL || category == BIT_CRATE)) {
                 synchronized (removalQueue) {
                     if (!removalQueue.contains(entity)) removalQueue.add(entity);
+                }
+            }
+        }
+    }
+
+    private void checkPickup(Entity a, Entity b) {
+        PlayerComponent pc = a.getComponent(PlayerComponent.class);
+        InteractableComponent item = b.getComponent(InteractableComponent.class);
+        if (pc != null && !pc.isDead && item != null && "health_pack".equals(item.templateId)) {
+            HealthComponent hc = a.getComponent(HealthComponent.class);
+            if (hc != null && hc.currentHealth < hc.maxHealth) {
+                hc.currentHealth = Math.min(hc.maxHealth, hc.currentHealth + 10);
+                synchronized (removalQueue) {
+                    if (!removalQueue.contains(b)) removalQueue.add(b);
                 }
             }
         }
@@ -329,6 +345,9 @@ public class ServerEngine {
                         if (tx >= 0 && tx < map.width && ty >= 0 && ty < map.height) {
                             map.tiles[tx][ty] = DungeonMap.TILE_FLOOR;
                             networkManager.broadcastTCP(new TileUpdatePacket(tx, ty, DungeonMap.TILE_FLOOR));
+                            if (random.nextFloat() < 0.05f) {
+                                spawnItem("health_pack", tx, ty);
+                            }
                         }
                     }
                 }
@@ -570,7 +589,7 @@ public class ServerEngine {
         float minDist = 1.5f; 
         for (Entity e : entities.values()) {
             InteractableComponent interact = e.getComponent(InteractableComponent.class);
-            if (interact != null) {
+            if (interact != null && !"health_pack".equals(interact.templateId)) {
                 BodyComponent itemBc = e.getComponent(BodyComponent.class);
                 float dist = bc.body.getPosition().dst(itemBc.body.getPosition());
                 if (dist < minDist) {

@@ -220,7 +220,11 @@ public class GameScreen extends ScreenAdapter {
                 shapeRenderer.setColor(Color.BROWN);
                 shapeRenderer.rect(es.x - 7, es.y - 7, 14, 14);
             } else if (id >= 5000) { // Items
-                shapeRenderer.setColor(Color.GOLD);
+                if ("health_pack".equals(es.templateId)) {
+                    shapeRenderer.setColor(Color.LIME);
+                } else {
+                    shapeRenderer.setColor(Color.GOLD);
+                }
                 shapeRenderer.rect(es.x - 6, es.y - 6, 12, 12);
             }
 
