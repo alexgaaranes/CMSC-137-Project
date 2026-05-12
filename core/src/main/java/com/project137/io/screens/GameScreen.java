@@ -220,12 +220,13 @@ public class GameScreen extends ScreenAdapter {
                 shapeRenderer.setColor(Color.BROWN);
                 shapeRenderer.rect(es.x - 7, es.y - 7, 14, 14);
             } else if (id >= 5000) { // Items
-                if ("health_pack".equals(es.templateId)) {
+                if ("health_orb".equals(es.templateId)) {
                     shapeRenderer.setColor(Color.LIME);
+                    shapeRenderer.circle(es.x, es.y, 6);
                 } else {
                     shapeRenderer.setColor(Color.GOLD);
+                    shapeRenderer.rect(es.x - 6, es.y - 6, 12, 12);
                 }
-                shapeRenderer.rect(es.x - 6, es.y - 6, 12, 12);
             }
 
             // Render Revive Progress Bar

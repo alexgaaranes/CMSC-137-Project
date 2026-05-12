@@ -299,7 +299,7 @@ public class ServerEngine {
     private void checkPickup(Entity a, Entity b) {
         PlayerComponent pc = a.getComponent(PlayerComponent.class);
         InteractableComponent item = b.getComponent(InteractableComponent.class);
-        if (pc != null && !pc.isDead && item != null && "health_pack".equals(item.templateId)) {
+        if (pc != null && !pc.isDead && item != null && "health_orb".equals(item.templateId)) {
             HealthComponent hc = a.getComponent(HealthComponent.class);
             if (hc != null && hc.currentHealth < hc.maxHealth) {
                 hc.currentHealth = Math.min(hc.maxHealth, hc.currentHealth + 10);
@@ -346,7 +346,7 @@ public class ServerEngine {
                             map.tiles[tx][ty] = DungeonMap.TILE_FLOOR;
                             networkManager.broadcastTCP(new TileUpdatePacket(tx, ty, DungeonMap.TILE_FLOOR));
                             if (random.nextFloat() < 0.05f) {
-                                spawnItem("health_pack", tx, ty);
+                                spawnItem("health_orb", tx, ty);
                             }
                         }
                     }
@@ -397,6 +397,7 @@ public class ServerEngine {
             if (!playersAlive) {
                 gameOver = true;
                 networkManager.broadcastTCP(new GameOverPacket(false));
+                networkManager.stop();
             }
         }
 
@@ -589,7 +590,7 @@ public class ServerEngine {
         float minDist = 1.5f; 
         for (Entity e : entities.values()) {
             InteractableComponent interact = e.getComponent(InteractableComponent.class);
-            if (interact != null && !"health_pack".equals(interact.templateId)) {
+            if (interact != null && !"health_orb".equals(interact.templateId)) {
                 BodyComponent itemBc = e.getComponent(BodyComponent.class);
                 float dist = bc.body.getPosition().dst(itemBc.body.getPosition());
                 if (dist < minDist) {
