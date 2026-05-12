@@ -11,10 +11,13 @@ import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.math.Vector2;
 import com.badlogic.gdx.math.Vector3;
+import com.badlogic.gdx.scenes.scene2d.InputEvent;
 import com.badlogic.gdx.scenes.scene2d.Stage;
 import com.badlogic.gdx.scenes.scene2d.ui.Label;
 import com.badlogic.gdx.scenes.scene2d.ui.Skin;
 import com.badlogic.gdx.scenes.scene2d.ui.Table;
+import com.badlogic.gdx.scenes.scene2d.ui.TextButton;
+import com.badlogic.gdx.scenes.scene2d.utils.ClickListener;
 import com.badlogic.gdx.utils.viewport.ExtendViewport;
 import com.badlogic.gdx.utils.viewport.ScreenViewport;
 import com.project137.io.Main;
@@ -40,6 +43,7 @@ public class GameScreen extends ScreenAdapter {
     private Label healthLabel;
     private Label energyLabel;
     private Label weaponLabel;
+    private Table downedTable;
     private float currentHP = 100, currentEnergy = 200;
     
     private final ConcurrentHashMap<Integer, EntityState> entities = new ConcurrentHashMap<>();
@@ -94,6 +98,28 @@ public class GameScreen extends ScreenAdapter {
         table.add(energyLabel).pad(10).left().row();
         table.add(weaponLabel).pad(10).left().expandX();
         hudStage.addActor(table);
+
+        // Downed Table
+        downedTable = new Table();
+        downedTable.setFillParent(true);
+        TextButton leaveButton = new TextButton("Leave Game", skin);
+        leaveButton.addListener(new ClickListener() {
+            @Override
+            public void clicked(InputEvent event, float x, float y) {
+                game.networkManager.disconnect();
+                Gdx.app.postRunnable(() -> game.setScreen(new MenuScreen(game)));
+            }
+        });
+        Label downedLabel = new Label("YOU ARE DOWNED", skin);
+        downedLabel.setFontScale(1.5f);
+        downedLabel.setColor(Color.RED);
+        downedTable.add(downedLabel).pad(10).row();
+        downedTable.add(new Label("Wait for a teammate to revive you (E)", skin)).pad(10).row();
+        downedTable.add(leaveButton).pad(10).width(200);
+        downedTable.setVisible(false);
+        hudStage.addActor(downedTable);
+
+        Gdx.input.setInputProcessor(hudStage);
 
         game.networkManager.setOnDisconnect(() -> Gdx.app.postRunnable(() -> game.setScreen(new MenuScreen(game))));
 
@@ -239,16 +265,7 @@ public class GameScreen extends ScreenAdapter {
         }
         shapeRenderer.end();
 
-        if (currentHP <= 0) {
-            spriteBatch.setProjectionMatrix(hudStage.getCamera().combined);
-            spriteBatch.begin();
-            font.getData().setScale(2.0f);
-            font.setColor(Color.RED);
-            String msg = "YOU ARE DOWNED\nWait for a teammate to revive you (E)";
-            font.draw(spriteBatch, msg, Gdx.graphics.getWidth()/2f - 200, Gdx.graphics.getHeight()/2f + 50);
-            font.getData().setScale(0.8f); // Reset scale
-            spriteBatch.end();
-        }
+        downedTable.setVisible(currentHP <= 0);
         
         if (debugEnabled) {
             spriteBatch.setProjectionMatrix(viewport.getCamera().combined);
