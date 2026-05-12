@@ -350,14 +350,23 @@ public class ServerEngine {
             }
             HealthComponent hc = entity.getComponent(HealthComponent.class);
             if (hc != null && hc.currentHealth <= 0) {
-                synchronized (removalQueue) { if (!removalQueue.contains(entity)) removalQueue.add(entity); }
+                PlayerComponent playerComp = entity.getComponent(PlayerComponent.class);
+                if (playerComp != null) {
+                    playerComp.isDead = true;
+                    // Ensure velocity is zero when dead
+                    BodyComponent bc = entity.getComponent(BodyComponent.class);
+                    if (bc != null && bc.body != null) bc.body.setLinearVelocity(0, 0);
+                } else {
+                    synchronized (removalQueue) { if (!removalQueue.contains(entity)) removalQueue.add(entity); }
+                }
             }
         }
 
         if (!gameOver && networkManager.hasClients()) {
             boolean playersAlive = false;
             for (Entity entity : entities.values()) {
-                if (entity.getComponent(PlayerComponent.class) != null) {
+                PlayerComponent pc = entity.getComponent(PlayerComponent.class);
+                if (pc != null && !pc.isDead) {
                     playersAlive = true;
                     break;
                 }
@@ -365,6 +374,38 @@ public class ServerEngine {
             if (!playersAlive) {
                 gameOver = true;
                 networkManager.broadcastTCP(new GameOverPacket(false));
+            }
+        }
+
+        // Handle Revival Progress
+        for (Entity entity : entities.values()) {
+            PlayerComponent pc = entity.getComponent(PlayerComponent.class);
+            if (pc != null && pc.isDead && pc.reviverId != null) {
+                Entity reviver = entities.get(pc.reviverId);
+                boolean valid = false;
+                if (reviver != null) {
+                    PlayerComponent rpc = reviver.getComponent(PlayerComponent.class);
+                    BodyComponent rbc = reviver.getComponent(BodyComponent.class);
+                    BodyComponent dbc = entity.getComponent(BodyComponent.class);
+                    if (rpc != null && !rpc.isDead && rbc != null && dbc != null) {
+                        float dist = rbc.body.getPosition().dst(dbc.body.getPosition());
+                        if (dist < 1.5f) {
+                            valid = true;
+                            pc.reviveProgress += delta;
+                            if (pc.reviveProgress >= 5.0f) {
+                                pc.isDead = false;
+                                pc.reviveProgress = 0;
+                                pc.reviverId = null;
+                                HealthComponent hc = entity.getComponent(HealthComponent.class);
+                                if (hc != null) hc.currentHealth = 50f;
+                            }
+                        }
+                    }
+                }
+                if (!valid) {
+                    pc.reviveProgress = 0;
+                    pc.reviverId = null;
+                }
             }
         }
     }
@@ -494,6 +535,12 @@ public class ServerEngine {
             InventoryComponent inv = entity.getComponent(InventoryComponent.class);
             EnergyComponent ec = entity.getComponent(EnergyComponent.class);
             if (bc != null && bc.body != null) {
+                PlayerComponent pc = entity.getComponent(PlayerComponent.class);
+                if (pc != null && pc.isDead) {
+                    bc.body.setLinearVelocity(0, 0);
+                    continue;
+                }
+                
                 float speed = 6.25f;
                 Vector2 velocity = new Vector2(0, 0);
                 if (input.up) velocity.y += 1;
@@ -538,6 +585,20 @@ public class ServerEngine {
                 spawnItem(oldWeapon, (int)(bc.body.getPosition().x * NetworkConfig.PPM / 16), (int)(bc.body.getPosition().y * NetworkConfig.PPM / 16));
             }
             networkManager.broadcastTCP(new WeaponChangePacket(playerId, inv.weaponSlots[0], inv.weaponSlots[1], inv.activeSlot));
+        }
+
+        // Check for dead players to start resurrection
+        for (Entity e : entities.values()) {
+            PlayerComponent targetPc = e.getComponent(PlayerComponent.class);
+            if (targetPc != null && targetPc.isDead && e != entities.get(playerId)) {
+                BodyComponent targetBc = e.getComponent(BodyComponent.class);
+                if (bc.body.getPosition().dst(targetBc.body.getPosition()) < 1.5f) {
+                    if (targetPc.reviverId == null) {
+                        targetPc.reviverId = playerId;
+                        targetPc.reviveProgress = 0;
+                    }
+                }
+            }
         }
     }
 

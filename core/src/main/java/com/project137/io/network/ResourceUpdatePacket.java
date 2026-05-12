@@ -8,12 +8,17 @@ public class ResourceUpdatePacket implements Packet {
     public int playerId;
     public float hp;
     public float energy;
+    public float reviveProgress;
 
     public ResourceUpdatePacket() {}
     public ResourceUpdatePacket(int playerId, float hp, float energy) {
+        this(playerId, hp, energy, 0);
+    }
+    public ResourceUpdatePacket(int playerId, float hp, float energy, float reviveProgress) {
         this.playerId = playerId;
         this.hp = hp;
         this.energy = energy;
+        this.reviveProgress = reviveProgress;
     }
 
     @Override
@@ -21,6 +26,7 @@ public class ResourceUpdatePacket implements Packet {
         out.writeInt(playerId);
         out.writeFloat(hp);
         out.writeFloat(energy);
+        out.writeFloat(reviveProgress);
     }
 
     @Override
@@ -28,6 +34,7 @@ public class ResourceUpdatePacket implements Packet {
         playerId = in.readInt();
         hp = in.readFloat();
         energy = in.readFloat();
+        reviveProgress = in.readFloat();
     }
 
     @Override

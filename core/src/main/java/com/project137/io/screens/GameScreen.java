@@ -53,6 +53,7 @@ public class GameScreen extends ScreenAdapter {
     private static class EntityState {
         float x, y, angle, targetX, targetY;
         float hp = -1; // -1 means unknown
+        float reviveProgress = 0;
         long lastSequence = -1;
         String templateId;
 
@@ -105,9 +106,6 @@ public class GameScreen extends ScreenAdapter {
                 if (remove.entityId >= 1000) {
                     synchronized (removedIds) { removedIds.add(remove.entityId); }
                 }
-                if (remove.entityId == game.networkManager.getPlayerId()) {
-                    Gdx.app.postRunnable(() -> game.setScreen(new EndGameScreen(game, "YOU DIED.\nWaiting for game to end...")));
-                }
             } else if (packet instanceof GameOverPacket gameOver) {
                 Gdx.app.postRunnable(() -> game.setScreen(new EndGameScreen(game, "GAME OVER!\nAll players have died.")));
             } else if (packet instanceof TeleportPacket tp) {
@@ -130,6 +128,7 @@ public class GameScreen extends ScreenAdapter {
                 EntityState es = entities.get(res.playerId);
                 if (es != null) {
                     es.hp = res.hp;
+                    es.reviveProgress = res.reviveProgress;
                 }
             } else if (packet instanceof WeaponChangePacket wchange) {
                 if (wchange.playerId == game.networkManager.getPlayerId()) {
@@ -203,27 +202,48 @@ public class GameScreen extends ScreenAdapter {
 
         for (Integer id : entities.keySet()) {
             EntityState es = entities.get(id);
+            
+            // Set color based on entity type and state
             if (id == game.networkManager.getPlayerId()) {
-                shapeRenderer.setColor(Color.BLUE);
+                shapeRenderer.setColor(currentHP <= 0 ? Color.GRAY : Color.BLUE);
                 shapeRenderer.circle(localX, localY, 15);
-            } else if (id < 10) {
-                shapeRenderer.setColor(Color.RED);
+            } else if (id < 10) { // Other players
+                shapeRenderer.setColor(es.hp == 0 ? Color.GRAY : Color.RED);
                 shapeRenderer.circle(es.x, es.y, 15);
-            } else if (id < 2000) {
+            } else if (id < 2000) { // Enemies
                 shapeRenderer.setColor(Color.PURPLE);
                 shapeRenderer.circle(es.x, es.y, 14);
-            } else if (id < 3000) {
+            } else if (id < 3000) { // Projectiles
                 shapeRenderer.setColor(Color.ORANGE);
                 shapeRenderer.circle(es.x, es.y, 5);
-            } else if (id < 4000) {
+            } else if (id < 4000) { // Crates
                 shapeRenderer.setColor(Color.BROWN);
                 shapeRenderer.rect(es.x - 7, es.y - 7, 14, 14);
-            } else if (id >= 5000) {
+            } else if (id >= 5000) { // Items
                 shapeRenderer.setColor(Color.GOLD);
                 shapeRenderer.rect(es.x - 6, es.y - 6, 12, 12);
             }
+
+            // Render Revive Progress Bar
+            if (es.reviveProgress > 0) {
+                shapeRenderer.setColor(Color.GRAY);
+                shapeRenderer.rect(es.x - 20, es.y + 20, 40, 5);
+                shapeRenderer.setColor(Color.GREEN);
+                shapeRenderer.rect(es.x - 20, es.y + 20, (es.reviveProgress / 5.0f) * 40, 5);
+            }
         }
         shapeRenderer.end();
+
+        if (currentHP <= 0) {
+            spriteBatch.setProjectionMatrix(hudStage.getCamera().combined);
+            spriteBatch.begin();
+            font.getData().setScale(2.0f);
+            font.setColor(Color.RED);
+            String msg = "YOU ARE DOWNED\nWait for a teammate to revive you (E)";
+            font.draw(spriteBatch, msg, Gdx.graphics.getWidth()/2f - 200, Gdx.graphics.getHeight()/2f + 50);
+            font.getData().setScale(0.8f); // Reset scale
+            spriteBatch.end();
+        }
         
         if (debugEnabled) {
             spriteBatch.setProjectionMatrix(viewport.getCamera().combined);
@@ -253,6 +273,7 @@ public class GameScreen extends ScreenAdapter {
     }
 
     private void handleLocalMovement(float delta) {
+        if (currentHP <= 0) return;
         Vector2 velocity = new Vector2(0, 0);
         if (Gdx.input.isKeyPressed(Input.Keys.W)) velocity.y += 1;
         if (Gdx.input.isKeyPressed(Input.Keys.S)) velocity.y -= 1;
@@ -277,12 +298,29 @@ public class GameScreen extends ScreenAdapter {
     }
 
     private void updateAimAngle() {
+        if (currentHP <= 0) return;
         Vector3 mousePos = new Vector3(Gdx.input.getX(), Gdx.input.getY(), 0);
         viewport.unproject(mousePos);
         aimAngle = MathUtils.atan2(mousePos.y - localY, mousePos.x - localX) * MathUtils.radiansToDegrees;
     }
 
     private void sendInput() {
+        if (currentHP <= 0) {
+            // Still send interaction input so they can potentially swap weapons while downed?
+            // Actually, better to just allow interaction so they can be resurrected.
+            // Wait, resurrection is handled by the ALIVE player interacting with the dead one.
+            // So the dead player doesn't need to do anything.
+            // But they might want to swap weapons? Let's just allow swap and interact.
+            boolean swap = Gdx.input.isKeyJustPressed(Input.Keys.Q);
+            boolean interact = Gdx.input.isKeyJustPressed(Input.Keys.E);
+            if (swap || interact) {
+                game.networkManager.sendUDP(new InputPacket(
+                    game.networkManager.getPlayerId(),
+                    false, false, false, false, false, swap, interact, aimAngle
+                ));
+            }
+            return;
+        }
         boolean up = Gdx.input.isKeyPressed(Input.Keys.W);
         boolean down = Gdx.input.isKeyPressed(Input.Keys.S);
         boolean left = Gdx.input.isKeyPressed(Input.Keys.A);
