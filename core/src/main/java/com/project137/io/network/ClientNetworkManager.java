@@ -89,6 +89,16 @@ public class ClientNetworkManager {
                         is.read(tcpIn);
                         packet = is;
                     }
+                    case OpCode.TCP_BUFF_VOTE_START -> {
+                        BuffPackets.BuffVoteStartPacket start = new BuffPackets.BuffVoteStartPacket();
+                        start.read(tcpIn);
+                        packet = start;
+                    }
+                    case OpCode.TCP_BUFF_VOTE_RESULT -> {
+                        BuffPackets.BuffVoteResultPacket res = new BuffPackets.BuffVoteResultPacket();
+                        res.read(tcpIn);
+                        packet = res;
+                    }
                 }
                 
                 if (packet != null && packetListener != null) {

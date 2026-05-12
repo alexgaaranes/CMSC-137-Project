@@ -22,6 +22,9 @@ import com.badlogic.gdx.utils.viewport.ExtendViewport;
 import com.badlogic.gdx.utils.viewport.ScreenViewport;
 import com.project137.io.Main;
 import com.project137.io.network.*;
+import com.project137.io.world.DungeonMap;                      
+import com.project137.io.world.DungeonRenderer;
+import com.project137.io.network.*;
 import com.project137.io.world.DungeonMap;
 import com.project137.io.world.DungeonRenderer;
 
@@ -44,7 +47,10 @@ public class GameScreen extends ScreenAdapter {
     private Label energyLabel;
     private Label weaponLabel;
     private Table downedTable;
-    private float currentHP = 100, currentEnergy = 200;
+    private Table voteTable;
+    private Label resultLabel;
+    private float currentHP = 100, maxHP = 100;
+    private float currentEnergy = 200, maxEnergy = 200;
     
     private final ConcurrentHashMap<Integer, EntityState> entities = new ConcurrentHashMap<>();
     private final Set<Integer> removedIds = new HashSet<>();
@@ -66,6 +72,15 @@ public class GameScreen extends ScreenAdapter {
             this.y = y;
             this.targetX = x;
             this.targetY = y;
+        }
+
+        public void update(PlayerUpdatePacket p) {
+            if (p.sequence > lastSequence) {
+                targetX = p.x;
+                targetY = p.y;
+                angle = p.angle;
+                lastSequence = p.sequence;
+            }
         }
     }
 
@@ -119,6 +134,21 @@ public class GameScreen extends ScreenAdapter {
         downedTable.setVisible(false);
         hudStage.addActor(downedTable);
 
+        // Vote Table
+        voteTable = new Table();
+        voteTable.setFillParent(true);
+        voteTable.setBackground(skin.newDrawable("white", new Color(0, 0, 0, 0.8f)));
+        voteTable.setVisible(false);
+        hudStage.addActor(voteTable);
+
+        // Result Label
+        resultLabel = new Label("", skin);
+        resultLabel.setFontScale(1.2f);
+        resultLabel.setColor(Color.GOLD);
+        resultLabel.setPosition(Gdx.graphics.getWidth()/2f - 100, Gdx.graphics.getHeight() - 100);
+        resultLabel.setVisible(false);
+        hudStage.addActor(resultLabel);
+
         Gdx.input.setInputProcessor(hudStage);
 
         game.networkManager.setOnDisconnect(() -> Gdx.app.postRunnable(() -> game.setScreen(new MenuScreen(game))));
@@ -134,7 +164,37 @@ public class GameScreen extends ScreenAdapter {
                 }
             } else if (packet instanceof GameOverPacket gameOver) {
                 Gdx.app.postRunnable(() -> game.setScreen(new EndGameScreen(game, "GAME OVER!\nAll players have died.")));
-            } else if (packet instanceof TeleportPacket tp) {
+            } else if (packet instanceof PlayerUpdatePacket update) {
+                synchronized (removedIds) {
+                    if (removedIds.contains(update.playerId)) return;
+                }
+                
+                EntityState es = entities.get(update.playerId);
+                if (es == null) {
+                    es = new EntityState(update.x, update.y);
+                    entities.put(update.playerId, es);
+                }
+
+                if (update.sequence > es.lastSequence) {
+                    es.update(update);
+                    
+                    if (update.playerId == game.networkManager.getPlayerId()) {
+                        float dist = Vector2.dst(localX, localY, es.targetX, es.targetY);
+                        if (dist > 60) {
+                            localX = es.targetX;
+                            localY = es.targetY;
+                        } else if (dist > 2) {
+                            localX = MathUtils.lerp(localX, es.targetX, 0.4f);
+                            localY = MathUtils.lerp(localY, es.targetY, 0.4f);
+                        }
+                    }
+                }
+            } else if (packet instanceof BuffPackets.BuffVoteStartPacket start) {
+                Gdx.app.postRunnable(() -> showVoteDialog(start.options));
+            } else if (packet instanceof BuffPackets.BuffVoteResultPacket result) {
+                Gdx.app.postRunnable(() -> showVoteResult(result.winnerName));
+            }
+ else if (packet instanceof TeleportPacket tp) {
                 if (tp.playerId == game.networkManager.getPlayerId()) {
                     localX = tp.x;
                     localY = tp.y;
@@ -143,10 +203,12 @@ public class GameScreen extends ScreenAdapter {
                 // Update local player stats
                 if (res.playerId == game.networkManager.getPlayerId()) {
                     currentHP = res.hp;
+                    maxHP = res.maxHp;
                     currentEnergy = res.energy;
+                    maxEnergy = res.maxEnergy;
                     Gdx.app.postRunnable(() -> {
-                        healthLabel.setText("HP: " + (int)currentHP + "/100");
-                        energyLabel.setText("Energy: " + (int)currentEnergy + "/200");
+                        healthLabel.setText("HP: " + (int)currentHP + "/" + (int)maxHP);
+                        energyLabel.setText("Energy: " + (int)currentEnergy + "/" + (int)maxEnergy);
                     });
                 }
                 
@@ -167,34 +229,6 @@ public class GameScreen extends ScreenAdapter {
                 entities.put(item.entityId, es);
             } else if (packet instanceof TileUpdatePacket tileUpdate) {
                 if (this.map != null) this.map.tiles[tileUpdate.x][tileUpdate.y] = tileUpdate.tile;
-            } else if (packet instanceof PlayerUpdatePacket update) {
-                synchronized (removedIds) {
-                    if (removedIds.contains(update.playerId)) return;
-                }
-                
-                EntityState es = entities.get(update.playerId);
-                if (es == null) {
-                    es = new EntityState(update.x, update.y);
-                    entities.put(update.playerId, es);
-                }
-
-                if (update.sequence > es.lastSequence) {
-                    es.targetX = update.x;
-                    es.targetY = update.y;
-                    es.angle = update.angle;
-                    es.lastSequence = update.sequence;
-                    
-                    if (update.playerId == game.networkManager.getPlayerId()) {
-                        float dist = Vector2.dst(localX, localY, es.targetX, es.targetY);
-                        if (dist > 60) {
-                            localX = es.targetX;
-                            localY = es.targetY;
-                        } else if (dist > 2) {
-                            localX = MathUtils.lerp(localX, es.targetX, 0.4f);
-                            localY = MathUtils.lerp(localY, es.targetY, 0.4f);
-                        }
-                    }
-                }
             }
         });
     }
@@ -270,11 +304,20 @@ public class GameScreen extends ScreenAdapter {
         if (debugEnabled) {
             spriteBatch.setProjectionMatrix(viewport.getCamera().combined);
             spriteBatch.begin();
+            
+            // Draw player position and tile coordinates
+            int tx = (int)(localX / 16);
+            int ty = (int)(localY / 16);
+            String posDebug = String.format("POS: %.1f, %.1f\nTILE: %d, %d", localX, localY, tx, ty);
+            font.setColor(Color.YELLOW);
+            font.draw(spriteBatch, posDebug, localX + 20, localY - 20);
+
             for (Integer id : entities.keySet()) {
                 EntityState es = entities.get(id);
                 String debugText = "ID:" + id;
                 if (es.templateId != null) debugText += "\n" + es.templateId;
                 if (es.hp >= 0) debugText += "\nHP:" + (int)es.hp;
+                font.setColor(Color.WHITE);
                 font.draw(spriteBatch, debugText, es.x + 15, es.y + 15);
             }
             spriteBatch.end();
@@ -355,6 +398,39 @@ public class GameScreen extends ScreenAdapter {
             game.networkManager.getPlayerId(),
             up, down, left, right, attack, swap, interact, aimAngle
         ));
+    }
+
+    private void showVoteDialog(String[] options) {
+        voteTable.clear();
+        Label title = new Label("CHOOSE A TEAM BUFF", skin);
+        title.setFontScale(1.5f);
+        title.setColor(Color.CYAN);
+        voteTable.add(title).pad(20).row();
+
+        for (int i = 0; i < options.length; i++) {
+            final int index = i;
+            TextButton btn = new TextButton(options[i], skin);
+            btn.addListener(new ClickListener() {
+                @Override
+                public void clicked(InputEvent event, float x, float y) {
+                    game.networkManager.sendTCP(new BuffPackets.BuffVoteSubmitPacket(index));
+                    voteTable.setVisible(false);
+                }
+            });
+            voteTable.add(btn).width(300).pad(10).row();
+        }
+        voteTable.setVisible(true);
+    }
+
+    private void showVoteResult(String winner) {
+        resultLabel.setText("BUFF APPLIED: " + winner);
+        resultLabel.setVisible(true);
+        com.badlogic.gdx.utils.Timer.schedule(new com.badlogic.gdx.utils.Timer.Task() {
+            @Override
+            public void run() {
+                resultLabel.setVisible(false);
+            }
+        }, 5f);
     }
 
     @Override

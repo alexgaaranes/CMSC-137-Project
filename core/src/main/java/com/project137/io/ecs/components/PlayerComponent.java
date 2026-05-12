@@ -7,4 +7,5 @@ public class PlayerComponent implements Component {
     public boolean isDead = false;
     public float reviveProgress = 0;
     public Integer reviverId = null;
+    public final java.util.List<String> buffs = new java.util.ArrayList<>();
 }

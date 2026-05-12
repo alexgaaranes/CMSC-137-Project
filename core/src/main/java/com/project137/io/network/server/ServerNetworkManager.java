@@ -85,6 +85,10 @@ public class ServerNetworkManager {
                         broadcastTCP(new MapDataPacket(gameEngine.getMap()));
                         broadcastTCP(new StartGamePacket());
                     }
+                } else if (opCode == OpCode.TCP_BUFF_VOTE_SUBMIT) {
+                    BuffPackets.BuffVoteSubmitPacket vote = new BuffPackets.BuffVoteSubmitPacket();
+                    vote.read(client.in);
+                    gameEngine.handleBuffVote(client.id, vote.buffIndex);
                 } else if (opCode == OpCode.TCP_DISCONNECT) {
                     break;
                 }
@@ -156,6 +160,13 @@ public class ServerNetworkManager {
         }
     }
 
+    public void sendTCPTo(int playerId, Packet packet) {
+        ConnectedClient client = clients.get(playerId);
+        if (client != null) {
+            sendTCP(client, packet);
+        }
+    }
+
     public void broadcastUDP(Packet packet) {
         try {
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
@@ -187,5 +198,9 @@ public class ServerNetworkManager {
 
     public boolean hasClients() {
         return !clients.isEmpty();
+    }
+
+    public int hasClientsCount() {
+        return clients.size();
     }
 }

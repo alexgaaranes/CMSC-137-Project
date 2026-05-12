@@ -17,6 +17,7 @@ import com.project137.io.world.DungeonMap;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -41,14 +42,20 @@ public class ServerEngine {
     private final AtomicInteger nextCrateId = new AtomicInteger(3000);
     private final AtomicInteger nextItemId = new AtomicInteger(5000);
     
-    private final DungeonMap map;
+    private DungeonMap map;
     private final DungeonGenerator generator;
     private final ServerNetworkManager networkManager;
     private final Random random = new Random();
     
     private final List<Entity> removalQueue = new ArrayList<>();
+    private final List<Body> wallBodies = new ArrayList<>();
     private final List<Body> gateBodies = new ArrayList<>();
+    private final List<Body> bodiesToRemove = new ArrayList<>();
+    private final java.util.concurrent.ConcurrentLinkedQueue<Runnable> mainThreadTasks = new java.util.concurrent.ConcurrentLinkedQueue<>();
     private boolean gameOver = false;
+    private boolean isVoting = false;
+    private final ConcurrentHashMap<Integer, Integer> playerVotes = new ConcurrentHashMap<>();
+    private final String[] currentBuffOptions = {"Vitality (+20 Max HP)", "Adrenaline (+20% Speed)", "Power (+5 Damage)", "Efficiency (-25% Energy Cost)"};
 
     public ServerEngine(ServerNetworkManager networkManager) {
         this.networkManager = networkManager;
@@ -71,11 +78,14 @@ public class ServerEngine {
     }
 
     private void createPhysicsObjects() {
+        for (Body b : wallBodies) bodiesToRemove.add(b);
+        wallBodies.clear();
         for (int x = 0; x < map.width; x++) {
             for (int y = 0; y < map.height; y++) {
                 int tile = map.tiles[x][y];
                 if (tile == DungeonMap.TILE_WALL) {
-                    createStaticBox(x, y, BIT_WALL, (short)(BIT_PLAYER | BIT_ENEMY | BIT_PROJECTILE));
+                    Body b = createStaticBox(x, y, BIT_WALL, (short)(BIT_PLAYER | BIT_ENEMY | BIT_PROJECTILE));
+                    wallBodies.add(b);
                 } else if (tile == DungeonMap.TILE_CRATE) {
                     spawnCrate(x, y);
                 }
@@ -83,7 +93,7 @@ public class ServerEngine {
         }
     }
 
-    private void createStaticBox(int tx, int ty, short category, short mask) {
+    private Body createStaticBox(int tx, int ty, short category, short mask) {
         BodyDef bodyDef = new BodyDef();
         bodyDef.type = BodyDef.BodyType.StaticBody;
         bodyDef.position.set((tx * 16 + 8) / NetworkConfig.PPM, (ty * 16 + 8) / NetworkConfig.PPM);
@@ -96,6 +106,7 @@ public class ServerEngine {
         fdef.filter.maskBits = mask;
         body.createFixture(fdef);
         box.dispose();
+        return body;
     }
 
     private void spawnCrate(int tx, int ty) {
@@ -327,10 +338,22 @@ public class ServerEngine {
     }
 
     public void update(float delta) {
+        Runnable task;
+        while ((task = mainThreadTasks.poll()) != null) {
+            task.run();
+        }
+
+        if (isVoting) return; // Pause updates during voting
+        
         processOneShotEvents();
         processInputs(delta);
         checkRoomStates();
         engine.update(delta);
+        
+        synchronized (bodiesToRemove) {
+            for (Body b : bodiesToRemove) world.destroyBody(b);
+            bodiesToRemove.clear();
+        }
         
         synchronized (removalQueue) {
             for (Entity entity : removalQueue) {
@@ -381,6 +404,21 @@ public class ServerEngine {
                     if (bc != null && bc.body != null) bc.body.setLinearVelocity(0, 0);
                 } else {
                     synchronized (removalQueue) { if (!removalQueue.contains(entity)) removalQueue.add(entity); }
+                }
+            }
+
+            // Send resource updates for players
+            PlayerComponent pc_player = entity.getComponent(PlayerComponent.class);
+            if (pc_player != null) {
+                HealthComponent hc_player = entity.getComponent(HealthComponent.class);
+                EnergyComponent ec_player = entity.getComponent(EnergyComponent.class);
+                if (hc_player != null && ec_player != null) {
+                    networkManager.broadcastUDP(new ResourceUpdatePacket(
+                        entity.getComponent(NetworkComponent.class).id,
+                        hc_player.currentHealth, hc_player.maxHealth,
+                        ec_player.currentEnergy, ec_player.maxEnergy,
+                        pc_player.reviveProgress
+                    ));
                 }
             }
         }
@@ -483,9 +521,136 @@ public class ServerEngine {
                         }
                     }
                 }
-                if (!enemiesAlive) unlockRoom(room);
+                if (!enemiesAlive) {
+                    System.out.println("[Progression] Room at (" + room.x + "," + room.y + ") cleared! Opening gates.");
+                    unlockRoom(room);
+                    checkLevelCleared();
+                }
             }
         }
+    }
+
+    private void checkLevelCleared() {
+        boolean allCleared = true;
+        for (DungeonGenerator.Room room : generator.rooms) {
+            if (room.type == DungeonGenerator.RoomType.ENEMY && !room.cleared) {
+                allCleared = false;
+                break;
+            }
+        }
+        if (allCleared) {
+            System.out.println("[Progression] ALL ROOMS CLEARED! Starting buff vote...");
+            startBuffVote();
+        }
+    }
+
+    private void startBuffVote() {
+        isVoting = true;
+        playerVotes.clear();
+        networkManager.broadcastTCP(new BuffPackets.BuffVoteStartPacket(currentBuffOptions));
+    }
+
+    public void handleBuffVote(int playerId, int buffIndex) {
+        if (!isVoting) return;
+        playerVotes.put(playerId, buffIndex);
+        // Check if everyone has voted
+        if (playerVotes.size() >= networkManager.hasClientsCount()) {
+            mainThreadTasks.add(this::applyVoteResults);
+        }
+    }
+
+    private void applyVoteResults() {
+        for (Map.Entry<Integer, Integer> entry : playerVotes.entrySet()) {
+            int playerId = entry.getKey();
+            int buffIndex = entry.getValue();
+            String buff = currentBuffOptions[buffIndex];
+            
+            // Find the player entity
+            for (Entity e : entities.values()) {
+                NetworkComponent net = e.getComponent(NetworkComponent.class);
+                if (net != null && net.id == playerId) {
+                    PlayerComponent pc = e.getComponent(PlayerComponent.class);
+                    if (pc != null) {
+                        pc.buffs.add(buff);
+                        // Send individual notification to player
+                        networkManager.sendTCPTo(playerId, new BuffPackets.BuffVoteResultPacket(buff));
+                    }
+                    break;
+                }
+            }
+        }
+        
+        System.out.println("[Progression] All players picked individual buffs. Starting next level.");
+        isVoting = false;
+        mainThreadTasks.add(this::nextLevel);
+    }
+
+    private void nextLevel() {
+        // Clear old entities (except players)
+        for (Integer id : entities.keySet()) {
+            if (id >= 10) { 
+                Entity e = entities.get(id);
+                synchronized (removalQueue) { if (!removalQueue.contains(e)) removalQueue.add(e); }
+            }
+        }
+
+        // Generate new map
+        generator.rooms.clear();
+        this.map = generator.generate(160, 160);
+        
+        createPhysicsObjects();
+        spawnInitialEnemies();
+        spawnInitialItems();
+        
+        networkManager.broadcastTCP(new MapDataPacket(map));
+        
+        DungeonGenerator.Room spawnRoom = generator.rooms.get(0);
+        float spawnX = (spawnRoom.centerX() * 16 + 8) / NetworkConfig.PPM;
+        float spawnY = (spawnRoom.centerY() * 16 + 8) / NetworkConfig.PPM;
+        
+        for (Entity entity : entities.values()) {
+            PlayerComponent pc = entity.getComponent(PlayerComponent.class);
+            if (pc != null) {
+                // Reset player state for new level
+                pc.isDead = false;
+                pc.reviveProgress = 0;
+                pc.reviverId = null;
+                
+                BodyComponent bc = entity.getComponent(BodyComponent.class);
+                NetworkComponent net = entity.getComponent(NetworkComponent.class);
+                if (bc != null && bc.body != null) {
+                    bc.body.setTransform(spawnX, spawnY, 0);
+                    bc.body.setLinearVelocity(0, 0);
+                    bc.body.setAwake(true);
+                }
+                networkManager.broadcastTCP(new TeleportPacket(net.id, spawnX * NetworkConfig.PPM, spawnY * NetworkConfig.PPM));
+                
+                // Apply all active buffs to player stats FIRST so max HP is correct
+                applyBuffsToPlayer(entity);
+
+                // Heal players slightly on next level (Second Wind)
+                HealthComponent hc = entity.getComponent(HealthComponent.class);
+                if (hc != null) hc.currentHealth = Math.min(hc.maxHealth, hc.currentHealth + 20);
+            }
+        }
+    }
+
+    private void applyBuffsToPlayer(Entity player) {
+        HealthComponent hc = player.getComponent(HealthComponent.class);
+        PlayerComponent pc = player.getComponent(PlayerComponent.class);
+        if (pc == null || hc == null) return;
+
+        float hpBonus = 0;
+        for (String buff : pc.buffs) {
+            if (buff.contains("Vitality")) hpBonus += 20;
+        }
+
+        float oldMax = hc.maxHealth;
+        hc.maxHealth = 100 + hpBonus;
+        if (hc.maxHealth > oldMax) {
+            hc.currentHealth += (hc.maxHealth - oldMax);
+        }
+        hc.currentHealth = Math.min(hc.maxHealth, hc.currentHealth);
     }
 
     private void lockRoom(DungeonGenerator.Room room, float teleportX, float teleportY) {
@@ -544,7 +709,7 @@ public class ServerEngine {
             int ty = (int)(body.getPosition().y * NetworkConfig.PPM / 16);
             map.tiles[tx][ty] = DungeonMap.TILE_FLOOR;
             networkManager.broadcastTCP(new TileUpdatePacket(tx, ty, DungeonMap.TILE_FLOOR));
-            world.destroyBody(body);
+            bodiesToRemove.add(body);
         }
         gateBodies.clear();
     }
@@ -566,6 +731,8 @@ public class ServerEngine {
                 }
                 
                 float speed = 6.25f;
+                for (String buff : pc.buffs) if (buff.contains("Adrenaline")) speed *= 1.2f;
+                
                 Vector2 velocity = new Vector2(0, 0);
                 if (input.up) velocity.y += 1;
                 if (input.down) velocity.y -= 1;
@@ -575,10 +742,18 @@ public class ServerEngine {
                 bc.body.setLinearVelocity(velocity);
                 if (input.attack && wc != null && wc.cooldown <= 0) {
                     WeaponTemplate template = DataManager.getWeapon(inv.weaponSlots[inv.activeSlot]);
-                    if (template != null && ec != null && ec.currentEnergy >= template.energyCost) {
-                        spawnProjectile(playerId, bc.body.getPosition().x, bc.body.getPosition().y, input.targetAngle, wc.damage, wc.projectileSpeed);
-                        wc.cooldown = wc.fireRate;
-                        ec.currentEnergy -= template.energyCost;
+                    if (template != null && ec != null) {
+                        float cost = template.energyCost;
+                        for (String buff : pc.buffs) if (buff.contains("Efficiency")) cost *= 0.75f;
+                        
+                        if (ec.currentEnergy >= cost) {
+                            float damage = wc.damage;
+                            for (String buff : pc.buffs) if (buff.contains("Power")) damage += 5;
+                            
+                            spawnProjectile(playerId, bc.body.getPosition().x, bc.body.getPosition().y, input.targetAngle, damage, wc.projectileSpeed);
+                            wc.cooldown = wc.fireRate;
+                            ec.currentEnergy -= cost;
+                        }
                     }
                 }
             }
