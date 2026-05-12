@@ -5,7 +5,9 @@
     "hp": 30,
     "speed": 3,
     "detectRange": 500,
-    "color": "PURPLE"
+    "color": "PURPLE",
+    "damage": 10,
+    "attackRate": 1.0
   },
   {
     "id": "goblin",
@@ -13,6 +15,8 @@
     "hp": 60,
     "speed": 4.5,
     "detectRange": 800,
-    "color": "RED"
+    "color": "RED",
+    "damage": 20,
+    "attackRate": 1.5
   }
 ]

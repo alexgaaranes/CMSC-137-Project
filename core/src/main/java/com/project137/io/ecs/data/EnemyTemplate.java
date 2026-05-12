@@ -7,4 +7,6 @@ public class EnemyTemplate {
     public float speed;
     public float detectRange;
     public String color;
+    public float damage;
+    public float attackRate;
 }

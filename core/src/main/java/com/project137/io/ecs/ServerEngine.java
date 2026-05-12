@@ -48,6 +48,7 @@ public class ServerEngine {
     
     private final List<Entity> removalQueue = new ArrayList<>();
     private final List<Body> gateBodies = new ArrayList<>();
+    private boolean gameOver = false;
 
     public ServerEngine(ServerNetworkManager networkManager) {
         this.networkManager = networkManager;
@@ -192,6 +193,8 @@ public class ServerEngine {
         EnemyComponent enemy = new EnemyComponent();
         enemy.detectRange = 0; 
         enemy.speed = t.speed;
+        enemy.damage = t.damage;
+        enemy.attackRate = t.attackRate;
         entity.add(enemy);
         entity.add(new HealthComponent(t.hp));
         
@@ -344,6 +347,24 @@ public class ServerEngine {
                 if (pc.lifeTime <= 0) {
                     synchronized (removalQueue) { if (!removalQueue.contains(entity)) removalQueue.add(entity); }
                 }
+            }
+            HealthComponent hc = entity.getComponent(HealthComponent.class);
+            if (hc != null && hc.currentHealth <= 0) {
+                synchronized (removalQueue) { if (!removalQueue.contains(entity)) removalQueue.add(entity); }
+            }
+        }
+
+        if (!gameOver && networkManager.hasClients()) {
+            boolean playersAlive = false;
+            for (Entity entity : entities.values()) {
+                if (entity.getComponent(PlayerComponent.class) != null) {
+                    playersAlive = true;
+                    break;
+                }
+            }
+            if (!playersAlive) {
+                gameOver = true;
+                networkManager.broadcastTCP(new GameOverPacket(false));
             }
         }
     }

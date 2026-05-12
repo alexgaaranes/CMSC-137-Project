@@ -11,6 +11,7 @@ public class OpCode {
     public static final byte TCP_ENTITY_REMOVE = 8;
     public static final byte TCP_TILE_UPDATE = 9;
     public static final byte TCP_TELEPORT = 10;
+    public static final byte TCP_GAME_OVER = 11;
     public static final byte TCP_WEAPON_CHANGE = 20;
     public static final byte TCP_ITEM_SPAWN = 21;
     public static final byte TCP_DISCONNECT = 99;

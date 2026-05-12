@@ -58,6 +58,11 @@ public class ClientNetworkManager {
                         lobbyInfo.read(tcpIn);
                         packet = lobbyInfo;
                     }
+                    case OpCode.TCP_GAME_OVER -> {
+                        GameOverPacket gameOver = new GameOverPacket();
+                        gameOver.read(tcpIn);
+                        packet = gameOver;
+                    }
                     case OpCode.TCP_START_GAME -> packet = new StartGamePacket();
                     case OpCode.TCP_ENTITY_REMOVE -> {
                         EntityRemovePacket remove = new EntityRemovePacket();

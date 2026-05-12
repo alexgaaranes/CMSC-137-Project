@@ -105,6 +105,11 @@ public class GameScreen extends ScreenAdapter {
                 if (remove.entityId >= 1000) {
                     synchronized (removedIds) { removedIds.add(remove.entityId); }
                 }
+                if (remove.entityId == game.networkManager.getPlayerId()) {
+                    Gdx.app.postRunnable(() -> game.setScreen(new EndGameScreen(game, "YOU DIED.\nWaiting for game to end...")));
+                }
+            } else if (packet instanceof GameOverPacket gameOver) {
+                Gdx.app.postRunnable(() -> game.setScreen(new EndGameScreen(game, "GAME OVER!\nAll players have died.")));
             } else if (packet instanceof TeleportPacket tp) {
                 if (tp.playerId == game.networkManager.getPlayerId()) {
                     localX = tp.x;

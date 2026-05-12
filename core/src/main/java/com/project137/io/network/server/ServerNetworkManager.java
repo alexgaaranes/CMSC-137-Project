@@ -183,4 +183,8 @@ public class ServerNetworkManager {
             e.printStackTrace();
         }
     }
+
+    public boolean hasClients() {
+        return !clients.isEmpty();
+    }
 }
