@@ -62,6 +62,28 @@ public class GameScreen extends ScreenAdapter {
     private final float MOVE_SPEED = 200f; 
     private boolean debugEnabled = false;
 
+    // Character Animations
+    private com.badlogic.gdx.graphics.g2d.Animation<com.badlogic.gdx.graphics.g2d.TextureRegion> p1IdleAnim, p1RunAnim, p1DeathAnim;
+    private com.badlogic.gdx.graphics.g2d.Animation<com.badlogic.gdx.graphics.g2d.TextureRegion> p2IdleAnim, p2RunAnim, p2DeathAnim;
+    private com.badlogic.gdx.graphics.g2d.Animation<com.badlogic.gdx.graphics.g2d.TextureRegion> skelIdleAnim, skelRunAnim, skelAttackAnim, skelDeathAnim;
+    private com.badlogic.gdx.graphics.g2d.Animation<com.badlogic.gdx.graphics.g2d.TextureRegion> vampIdleAnim, vampRunAnim, vampAttackAnim, vampDeathAnim;
+    private com.badlogic.gdx.graphics.g2d.Animation<com.badlogic.gdx.graphics.g2d.TextureRegion> bossIdleAnim, bossHitAnim;
+
+    // Sprite & Weapon Textures
+    private com.badlogic.gdx.graphics.Texture smallBulletTex;
+    private com.badlogic.gdx.graphics.Texture longBulletTex;
+    private com.badlogic.gdx.graphics.Texture rocketTex;
+    private com.badlogic.gdx.graphics.Texture revolverTex;
+    private com.badlogic.gdx.graphics.Texture smgTex;
+    private com.badlogic.gdx.graphics.Texture rocketLauncherTex;
+    private com.badlogic.gdx.graphics.Texture healthOrbTex;
+
+    private java.util.List<com.badlogic.gdx.graphics.Texture> loadedTextures = new java.util.ArrayList<>();
+    private String localActiveWeaponId = "starter_pistol";
+
+    private float localStateTime = 0;
+    private boolean localIsMoving = false;
+
     private static class EntityState {
         float x, y, angle, targetX, targetY;
         float hp = -1; // -1 means unknown
@@ -69,6 +91,9 @@ public class GameScreen extends ScreenAdapter {
         float reviveProgress = 0;
         long lastSequence = -1;
         String templateId;
+        float stateTime = 0;
+        boolean isMoving = false;
+        String activeWeaponId = "starter_pistol";
 
         public EntityState(float x, float y) {
             this.x = x;
@@ -87,6 +112,24 @@ public class GameScreen extends ScreenAdapter {
         }
     }
 
+    private com.badlogic.gdx.graphics.g2d.Animation<com.badlogic.gdx.graphics.g2d.TextureRegion> createAnim(String path, int frameW, int frameH, float duration, com.badlogic.gdx.graphics.g2d.Animation.PlayMode mode) {
+        try {
+            com.badlogic.gdx.graphics.Texture tex = new com.badlogic.gdx.graphics.Texture(Gdx.files.internal(path));
+            loadedTextures.add(tex);
+            com.badlogic.gdx.graphics.g2d.TextureRegion[][] tmp = com.badlogic.gdx.graphics.g2d.TextureRegion.split(tex, frameW, frameH);
+            com.badlogic.gdx.utils.Array<com.badlogic.gdx.graphics.g2d.TextureRegion> frames = new com.badlogic.gdx.utils.Array<>();
+            for (int i = 0; i < tmp.length; i++) {
+                for (int j = 0; j < tmp[i].length; j++) {
+                    frames.add(tmp[i][j]);
+                }
+            }
+            return new com.badlogic.gdx.graphics.g2d.Animation<>(duration, frames, mode);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return null;
+        }
+    }
+
     public GameScreen(Main game) {
         this.game = game;
         this.shapeRenderer = new ShapeRenderer();
@@ -95,6 +138,45 @@ public class GameScreen extends ScreenAdapter {
         this.font.getData().setScale(0.8f);
         this.viewport = new ExtendViewport(640, 480);
         this.dungeonRenderer = new DungeonRenderer(shapeRenderer);
+
+        try {
+            smallBulletTex = new com.badlogic.gdx.graphics.Texture(Gdx.files.internal("sprites/projectile/small-bullet.png"));
+            longBulletTex = new com.badlogic.gdx.graphics.Texture(Gdx.files.internal("sprites/projectile/long-bullet.png"));
+            rocketTex = new com.badlogic.gdx.graphics.Texture(Gdx.files.internal("sprites/projectile/rocket.png"));
+            revolverTex = new com.badlogic.gdx.graphics.Texture(Gdx.files.internal("sprites/weapons/revolver.png"));
+            smgTex = new com.badlogic.gdx.graphics.Texture(Gdx.files.internal("sprites/weapons/smg.png"));
+            rocketLauncherTex = new com.badlogic.gdx.graphics.Texture(Gdx.files.internal("sprites/weapons/rocketlauncher.png"));
+            healthOrbTex = new com.badlogic.gdx.graphics.Texture(Gdx.files.internal("sprites/boss/boss_orb.png"));
+
+            p1IdleAnim = createAnim("sprites/player1/Idle1.png.png", 16, 16, 0.15f, com.badlogic.gdx.graphics.g2d.Animation.PlayMode.LOOP);
+            p1RunAnim = createAnim("sprites/player1/Run1.png.png", 16, 16, 0.1f, com.badlogic.gdx.graphics.g2d.Animation.PlayMode.LOOP);
+            p1DeathAnim = createAnim("sprites/player1/Death1.png.png", 16, 16, 0.15f, com.badlogic.gdx.graphics.g2d.Animation.PlayMode.NORMAL);
+
+            p2IdleAnim = createAnim("sprites/player2/Idle2.png", 16, 16, 0.15f, com.badlogic.gdx.graphics.g2d.Animation.PlayMode.LOOP);
+            p2RunAnim = createAnim("sprites/player2/Run2.png", 16, 16, 0.1f, com.badlogic.gdx.graphics.g2d.Animation.PlayMode.LOOP);
+            p2DeathAnim = createAnim("sprites/player2/Death2.png", 16, 16, 0.15f, com.badlogic.gdx.graphics.g2d.Animation.PlayMode.NORMAL);
+
+            skelIdleAnim = createAnim("sprites/enemy1/skeleton_idle.png", 32, 32, 0.15f, com.badlogic.gdx.graphics.g2d.Animation.PlayMode.LOOP);
+            skelRunAnim = createAnim("sprites/enemy1/skeleton_movement.png", 32, 32, 0.1f, com.badlogic.gdx.graphics.g2d.Animation.PlayMode.LOOP);
+            skelAttackAnim = createAnim("sprites/enemy1/skeleton_attack.png", 32, 32, 0.1f, com.badlogic.gdx.graphics.g2d.Animation.PlayMode.LOOP);
+            skelDeathAnim = createAnim("sprites/enemy1/skeleton_death.png", 32, 32, 0.1f, com.badlogic.gdx.graphics.g2d.Animation.PlayMode.NORMAL);
+
+            vampIdleAnim = createAnim("sprites/enemy2/vampire_idle.png", 32, 32, 0.15f, com.badlogic.gdx.graphics.g2d.Animation.PlayMode.LOOP);
+            vampRunAnim = createAnim("sprites/enemy2/vampire_movement.png", 32, 32, 0.1f, com.badlogic.gdx.graphics.g2d.Animation.PlayMode.LOOP);
+            vampAttackAnim = createAnim("sprites/enemy2/vampire_attack.png", 32, 32, 0.1f, com.badlogic.gdx.graphics.g2d.Animation.PlayMode.LOOP);
+            vampDeathAnim = createAnim("sprites/enemy2/vampire_death.png", 32, 32, 0.1f, com.badlogic.gdx.graphics.g2d.Animation.PlayMode.NORMAL);
+
+            bossIdleAnim = createAnim("sprites/boss/boss_idle.png", 208, 340, 0.2f, com.badlogic.gdx.graphics.g2d.Animation.PlayMode.LOOP);
+            bossHitAnim = createAnim("sprites/boss/boss_hit.png", 208, 340, 0.15f, com.badlogic.gdx.graphics.g2d.Animation.PlayMode.NORMAL);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void drawFlipped(com.badlogic.gdx.graphics.g2d.TextureRegion region, float x, float y, float width, float height, boolean flipX) {
+        if (region == null) return;
+        float scaleX = flipX ? -1f : 1f;
+        spriteBatch.draw(region, x, y, width/2f, height/2f, width, height, scaleX, 1f, 0f);
     }
 
     public void setInitialMap(DungeonMap map) {
@@ -224,9 +306,16 @@ public class GameScreen extends ScreenAdapter {
                     es.reviveProgress = res.reviveProgress;
                 }
             } else if (packet instanceof WeaponChangePacket wchange) {
-                if (wchange.playerId == game.networkManager.getPlayerId()) {
+                try {
                     String active = wchange.activeSlot == 0 ? wchange.slot0 : wchange.slot1;
-                    Gdx.app.postRunnable(() -> weaponLabel.setText("Weapon: " + active));
+                    if (wchange.playerId == game.networkManager.getPlayerId()) {
+                        localActiveWeaponId = active;
+                        Gdx.app.postRunnable(() -> weaponLabel.setText("Weapon: " + active));
+                    }
+                    EntityState esWeapon = entities.get(wchange.playerId);
+                    if (esWeapon != null) esWeapon.activeWeaponId = active;
+                } catch (Exception e) {
+                    e.printStackTrace();
                 }
             } else if (packet instanceof ItemSpawnPacket item) {
                 EntityState es = new EntityState(item.x, item.y);
@@ -246,6 +335,7 @@ public class GameScreen extends ScreenAdapter {
         if (Gdx.input.isKeyJustPressed(Input.Keys.F3)) debugEnabled = !debugEnabled;
 
         handleLocalMovement(delta);
+        localStateTime += delta;
         updateInterpolation(delta);
         updateAimAngle();
         sendInput();
@@ -261,51 +351,134 @@ public class GameScreen extends ScreenAdapter {
         
         if (map != null) dungeonRenderer.render(map);
 
+        // Render Textured Sprites using SpriteBatch first
+        spriteBatch.setProjectionMatrix(viewport.getCamera().combined);
+        spriteBatch.begin();
+        for (Integer id : entities.keySet()) {
+            EntityState es = entities.get(id);
+            if (id == game.networkManager.getPlayerId()) {
+                boolean flipX = MathUtils.cosDeg(aimAngle) < 0;
+                if (currentHP > 0) {
+                    com.badlogic.gdx.graphics.g2d.TextureRegion frame = localIsMoving && p1RunAnim != null ? p1RunAnim.getKeyFrame(localStateTime) : (p1IdleAnim != null ? p1IdleAnim.getKeyFrame(localStateTime) : null);
+                    drawFlipped(frame, localX - 16, localY - 16, 32, 32, flipX);
+                    
+                    // Render active weapon held by the player
+                    com.badlogic.gdx.graphics.Texture weaponTex = revolverTex;
+                    if ("fast_smg".equals(localActiveWeaponId)) weaponTex = smgTex;
+                    else if ("heavy_cannon".equals(localActiveWeaponId)) weaponTex = rocketLauncherTex;
+                    
+                    float weaponRot = flipX ? aimAngle + 180 : aimAngle;
+                    spriteBatch.draw(
+                        new com.badlogic.gdx.graphics.g2d.TextureRegion(weaponTex),
+                        localX + MathUtils.cosDeg(aimAngle) * 12 - 8,
+                        localY + MathUtils.sinDeg(aimAngle) * 12 - 8,
+                        8, 8,
+                        16, 16,
+                        1.0f, flipX ? -1.0f : 1.0f,
+                        aimAngle
+                    );
+                } else {
+                    spriteBatch.setColor(Color.GRAY);
+                    drawFlipped(p1DeathAnim != null ? p1DeathAnim.getKeyFrame(localStateTime) : null, localX - 16, localY - 16, 32, 32, flipX);
+                    spriteBatch.setColor(Color.WHITE);
+                }
+            } else if (id < 10) {
+                boolean flipX = MathUtils.cosDeg(es.angle) < 0;
+                if (es.hp > 0) {
+                    com.badlogic.gdx.graphics.g2d.TextureRegion frame = es.isMoving && p2RunAnim != null ? p2RunAnim.getKeyFrame(es.stateTime) : (p2IdleAnim != null ? p2IdleAnim.getKeyFrame(es.stateTime) : null);
+                    drawFlipped(frame, es.x - 16, es.y - 16, 32, 32, flipX);
+
+                    com.badlogic.gdx.graphics.Texture weaponTex = revolverTex;
+                    if ("fast_smg".equals(es.activeWeaponId)) weaponTex = smgTex;
+                    else if ("heavy_cannon".equals(es.activeWeaponId)) weaponTex = rocketLauncherTex;
+                    spriteBatch.draw(
+                        new com.badlogic.gdx.graphics.g2d.TextureRegion(weaponTex),
+                        es.x + MathUtils.cosDeg(es.angle) * 12 - 8,
+                        es.y + MathUtils.sinDeg(es.angle) * 12 - 8,
+                        8, 8,
+                        16, 16,
+                        1.0f, flipX ? -1.0f : 1.0f,
+                        es.angle
+                    );
+                } else {
+                    spriteBatch.setColor(Color.GRAY);
+                    drawFlipped(p2DeathAnim != null ? p2DeathAnim.getKeyFrame(es.stateTime) : null, es.x - 16, es.y - 16, 32, 32, flipX);
+                    spriteBatch.setColor(Color.WHITE);
+                }
+            } else if (id < 2000) {
+                boolean flipX = MathUtils.cosDeg(es.angle) < 0;
+                if (es.maxHp >= 300) {
+                    if (es.hp > 0 && bossIdleAnim != null) {
+                        drawFlipped(bossIdleAnim.getKeyFrame(es.stateTime), es.x - 52, es.y - 40, 104, 170, flipX);
+                    } else if (es.hp <= 0 && bossHitAnim != null) {
+                        drawFlipped(bossHitAnim.getKeyFrame(es.stateTime), es.x - 52, es.y - 40, 104, 170, flipX);
+                    }
+                } else if (es.maxHp <= 40) {
+                    if (es.hp > 0) {
+                        com.badlogic.gdx.graphics.g2d.TextureRegion frame;
+                        if (es.isMoving) frame = skelRunAnim != null ? skelRunAnim.getKeyFrame(es.stateTime) : null;
+                        else frame = skelAttackAnim != null ? skelAttackAnim.getKeyFrame(es.stateTime) : (skelIdleAnim != null ? skelIdleAnim.getKeyFrame(es.stateTime) : null);
+                        drawFlipped(frame, es.x - 32, es.y - 32, 64, 64, flipX);
+                    } else if (skelDeathAnim != null) {
+                        drawFlipped(skelDeathAnim.getKeyFrame(es.stateTime), es.x - 32, es.y - 32, 64, 64, flipX);
+                    }
+                } else {
+                    if (es.hp > 0) {
+                        com.badlogic.gdx.graphics.g2d.TextureRegion frame;
+                        if (es.isMoving) frame = vampRunAnim != null ? vampRunAnim.getKeyFrame(es.stateTime) : null;
+                        else frame = vampAttackAnim != null ? vampAttackAnim.getKeyFrame(es.stateTime) : (vampIdleAnim != null ? vampIdleAnim.getKeyFrame(es.stateTime) : null);
+                        drawFlipped(frame, es.x - 32, es.y - 32, 64, 64, flipX);
+                    } else if (vampDeathAnim != null) {
+                        drawFlipped(vampDeathAnim.getKeyFrame(es.stateTime), es.x - 32, es.y - 32, 64, 64, flipX);
+                    }
+                }
+            } else if (id < 3000) {
+                com.badlogic.gdx.graphics.Texture bulletTex = longBulletTex;
+                float bulletAngle = es.angle * MathUtils.radiansToDegrees;
+                if (Math.abs(es.targetX - es.x) > 0.1f || Math.abs(es.targetY - es.y) > 0.1f) {
+                    bulletAngle = MathUtils.atan2(es.targetY - es.y, es.targetX - es.x) * MathUtils.radiansToDegrees;
+                    es.angle = bulletAngle / MathUtils.radiansToDegrees; // cache the angle
+                }
+                spriteBatch.draw(
+                    new com.badlogic.gdx.graphics.g2d.TextureRegion(bulletTex),
+                    es.x - 8, es.y - 8,
+                    8, 8,
+                    16, 16,
+                    1.0f, 1.0f,
+                    bulletAngle
+                );
+            } else if (id >= 5000) {
+                if ("health_orb".equals(es.templateId)) {
+                    spriteBatch.draw(healthOrbTex, es.x - 8, es.y - 8, 16, 16);
+                } else if (!"portal".equals(es.templateId)) {
+                    com.badlogic.gdx.graphics.Texture itemTex = revolverTex;
+                    if ("fast_smg".equals(es.templateId)) itemTex = smgTex;
+                    else if ("heavy_cannon".equals(es.templateId)) itemTex = rocketLauncherTex;
+                    
+                    float floatOffset = 3f * (float)Math.sin(com.badlogic.gdx.utils.TimeUtils.nanoTime() / 150000000.0);
+                    spriteBatch.draw(itemTex, es.x - 10, es.y - 10 + floatOffset, 20, 20);
+                }
+            }
+        }
+        spriteBatch.end();
+
+        // Render Geometry & Overlays using ShapeRenderer
         shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
-        
-        shapeRenderer.setColor(Color.WHITE);
-        float indicatorX = localX + MathUtils.cosDeg(aimAngle) * 35;
-        float indicatorY = localY + MathUtils.sinDeg(aimAngle) * 35;
-        shapeRenderer.rectLine(localX, localY, indicatorX, indicatorY, 2);
 
         for (Integer id : entities.keySet()) {
             EntityState es = entities.get(id);
             
-            // Set color based on entity type and state
-            if (id == game.networkManager.getPlayerId()) {
-                shapeRenderer.setColor(currentHP <= 0 ? Color.GRAY : Color.BLUE);
-                shapeRenderer.circle(localX, localY, 15);
-            } else if (id < 10) { // Other players
-                shapeRenderer.setColor(es.hp == 0 ? Color.GRAY : Color.RED);
-                shapeRenderer.circle(es.x, es.y, 15);
-            } else if (id < 2000) { // Enemies
-                if (es.maxHp >= 300) {
-                    shapeRenderer.setColor(Color.RED);
-                    shapeRenderer.circle(es.x, es.y, 24);
-                } else {
-                    shapeRenderer.setColor(Color.PURPLE);
-                    shapeRenderer.circle(es.x, es.y, 14);
-                }
-            } else if (id < 3000) { // Projectiles
-                shapeRenderer.setColor(Color.ORANGE);
-                shapeRenderer.circle(es.x, es.y, 5);
-            } else if (id < 4000) { // Crates
+            if (id >= 3000 && id < 4000) {
+                // Crates
                 shapeRenderer.setColor(Color.BROWN);
                 shapeRenderer.rect(es.x - 7, es.y - 7, 14, 14);
-            } else if (id >= 5000) { // Items
-                if ("health_orb".equals(es.templateId)) {
-                    shapeRenderer.setColor(Color.LIME);
-                    shapeRenderer.circle(es.x, es.y, 6);
-                } else if ("portal".equals(es.templateId)) {
-                    float pulse = 16 + 8 * (float)Math.sin(com.badlogic.gdx.utils.TimeUtils.nanoTime() / 150000000.0);
-                    shapeRenderer.setColor(Color.GREEN);
-                    shapeRenderer.circle(es.x, es.y, pulse);
-                    shapeRenderer.setColor(Color.CYAN);
-                    shapeRenderer.circle(es.x, es.y, pulse * 0.6f);
-                } else {
-                    shapeRenderer.setColor(Color.GOLD);
-                    shapeRenderer.rect(es.x - 6, es.y - 6, 12, 12);
-                }
+            } else if (id >= 5000 && "portal".equals(es.templateId)) {
+                // The portal remains a glowing geometric shape
+                float pulse = 16 + 8 * (float)Math.sin(com.badlogic.gdx.utils.TimeUtils.nanoTime() / 150000000.0);
+                shapeRenderer.setColor(Color.GREEN);
+                shapeRenderer.circle(es.x, es.y, pulse);
+                shapeRenderer.setColor(Color.CYAN);
+                shapeRenderer.circle(es.x, es.y, pulse * 0.6f);
             }
 
             // Render Revive Progress Bar
@@ -368,16 +541,29 @@ public class GameScreen extends ScreenAdapter {
             velocity.nor().scl(MOVE_SPEED * delta);
             localX += velocity.x;
             localY += velocity.y;
+            localIsMoving = true;
+        } else {
+            localIsMoving = false;
         }
     }
 
     private void updateInterpolation(float delta) {
         float lerpFactor = 15f * delta; 
         for (Integer id : entities.keySet()) {
-            if (id == game.networkManager.getPlayerId()) continue;
             EntityState es = entities.get(id);
+            es.stateTime += delta;
+            if (id == game.networkManager.getPlayerId()) continue;
+            
+            float oldX = es.x;
+            float oldY = es.y;
             es.x = MathUtils.lerp(es.x, es.targetX, lerpFactor);
             es.y = MathUtils.lerp(es.y, es.targetY, lerpFactor);
+            
+            if (Vector2.dst(oldX, oldY, es.x, es.y) > 0.05f) {
+                es.isMoving = true;
+            } else {
+                es.isMoving = false;
+            }
         }
     }
 
@@ -494,5 +680,17 @@ public class GameScreen extends ScreenAdapter {
         font.dispose();
         hudStage.dispose();
         skin.dispose();
+
+        // Dispose textures
+        for (com.badlogic.gdx.graphics.Texture tex : loadedTextures) {
+            if (tex != null) tex.dispose();
+        }
+        if (smallBulletTex != null) smallBulletTex.dispose();
+        if (longBulletTex != null) longBulletTex.dispose();
+        if (rocketTex != null) rocketTex.dispose();
+        if (revolverTex != null) revolverTex.dispose();
+        if (smgTex != null) smgTex.dispose();
+        if (rocketLauncherTex != null) rocketLauncherTex.dispose();
+        if (healthOrbTex != null) healthOrbTex.dispose();
     }
 }
