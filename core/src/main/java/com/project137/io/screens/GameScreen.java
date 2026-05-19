@@ -49,6 +49,8 @@ public class GameScreen extends ScreenAdapter {
     private Table downedTable;
     private Table voteTable;
     private Label resultLabel;
+    private int clearedRooms = 0;
+    private int totalRooms = 0;
     private float currentHP = 100, maxHP = 100;
     private float currentEnergy = 200, maxEnergy = 200;
     
@@ -63,6 +65,7 @@ public class GameScreen extends ScreenAdapter {
     private static class EntityState {
         float x, y, angle, targetX, targetY;
         float hp = -1; // -1 means unknown
+        float maxHp = 100;
         float reviveProgress = 0;
         long lastSequence = -1;
         String templateId;
@@ -149,6 +152,7 @@ public class GameScreen extends ScreenAdapter {
         resultLabel.setVisible(false);
         hudStage.addActor(resultLabel);
 
+        // Room Progress Table is now visual-only around the minimap border!
         Gdx.input.setInputProcessor(hudStage);
 
         game.networkManager.setOnDisconnect(() -> Gdx.app.postRunnable(() -> game.setScreen(new MenuScreen(game))));
@@ -216,6 +220,7 @@ public class GameScreen extends ScreenAdapter {
                 EntityState es = entities.get(res.playerId);
                 if (es != null) {
                     es.hp = res.hp;
+                    es.maxHp = res.maxHp;
                     es.reviveProgress = res.reviveProgress;
                 }
             } else if (packet instanceof WeaponChangePacket wchange) {
@@ -229,6 +234,9 @@ public class GameScreen extends ScreenAdapter {
                 entities.put(item.entityId, es);
             } else if (packet instanceof TileUpdatePacket tileUpdate) {
                 if (this.map != null) this.map.tiles[tileUpdate.x][tileUpdate.y] = tileUpdate.tile;
+            } else if (packet instanceof RoomProgressPacket prog) {
+                this.clearedRooms = prog.clearedRooms;
+                this.totalRooms = prog.totalRooms;
             }
         });
     }
@@ -271,8 +279,13 @@ public class GameScreen extends ScreenAdapter {
                 shapeRenderer.setColor(es.hp == 0 ? Color.GRAY : Color.RED);
                 shapeRenderer.circle(es.x, es.y, 15);
             } else if (id < 2000) { // Enemies
-                shapeRenderer.setColor(Color.PURPLE);
-                shapeRenderer.circle(es.x, es.y, 14);
+                if (es.maxHp >= 300) {
+                    shapeRenderer.setColor(Color.RED);
+                    shapeRenderer.circle(es.x, es.y, 24);
+                } else {
+                    shapeRenderer.setColor(Color.PURPLE);
+                    shapeRenderer.circle(es.x, es.y, 14);
+                }
             } else if (id < 3000) { // Projectiles
                 shapeRenderer.setColor(Color.ORANGE);
                 shapeRenderer.circle(es.x, es.y, 5);
@@ -283,6 +296,12 @@ public class GameScreen extends ScreenAdapter {
                 if ("health_orb".equals(es.templateId)) {
                     shapeRenderer.setColor(Color.LIME);
                     shapeRenderer.circle(es.x, es.y, 6);
+                } else if ("portal".equals(es.templateId)) {
+                    float pulse = 16 + 8 * (float)Math.sin(com.badlogic.gdx.utils.TimeUtils.nanoTime() / 150000000.0);
+                    shapeRenderer.setColor(Color.GREEN);
+                    shapeRenderer.circle(es.x, es.y, pulse);
+                    shapeRenderer.setColor(Color.CYAN);
+                    shapeRenderer.circle(es.x, es.y, pulse * 0.6f);
                 } else {
                     shapeRenderer.setColor(Color.GOLD);
                     shapeRenderer.rect(es.x - 6, es.y - 6, 12, 12);
@@ -331,7 +350,7 @@ public class GameScreen extends ScreenAdapter {
                 otherPlayers.add(new Vector2(es.x, es.y));
             }
         }
-        dungeonRenderer.renderMinimap(map, localX, localY, otherPlayers);
+        dungeonRenderer.renderMinimap(map, localX, localY, otherPlayers, clearedRooms, totalRooms);
         
         hudStage.act(delta);
         hudStage.draw();
@@ -402,7 +421,7 @@ public class GameScreen extends ScreenAdapter {
 
     private void showVoteDialog(String[] options) {
         voteTable.clear();
-        Label title = new Label("CHOOSE A BUFF FOR  THE NEXT LEVEL", skin);
+        Label title = new Label("CHOOSE A BUFF FOR THE NEXT LEVEL", skin);
         title.setFontScale(1.5f);
         title.setColor(Color.CYAN);
         voteTable.add(title).pad(20).row();
@@ -414,7 +433,7 @@ public class GameScreen extends ScreenAdapter {
                 @Override
                 public void clicked(InputEvent event, float x, float y) {
                     game.networkManager.sendTCP(new BuffPackets.BuffVoteSubmitPacket(index));
-                    voteTable.setVisible(false);
+                    showWaitingScreen();
                 }
             });
             voteTable.add(btn).width(300).pad(10).row();
@@ -422,7 +441,36 @@ public class GameScreen extends ScreenAdapter {
         voteTable.setVisible(true);
     }
 
+    private void showWaitingScreen() {
+        voteTable.clear();
+        
+        Table container = new Table();
+        container.setBackground(skin.newDrawable("white", new Color(0.1f, 0.1f, 0.1f, 0.85f)));
+        container.pad(40);
+        
+        Label title = new Label("BUFF SELECTED!", skin);
+        title.setFontScale(1.8f);
+        title.setColor(Color.GOLD);
+        container.add(title).padBottom(20).row();
+        
+        Label waitLabel = new Label("Waiting for other players to choose their buffs...", skin);
+        waitLabel.setFontScale(1.2f);
+        waitLabel.setColor(Color.LIGHT_GRAY);
+        
+        waitLabel.addAction(com.badlogic.gdx.scenes.scene2d.actions.Actions.forever(
+            com.badlogic.gdx.scenes.scene2d.actions.Actions.sequence(
+                com.badlogic.gdx.scenes.scene2d.actions.Actions.fadeOut(0.8f),
+                com.badlogic.gdx.scenes.scene2d.actions.Actions.fadeIn(0.8f)
+            )
+        ));
+        
+        container.add(waitLabel).pad(10).row();
+        voteTable.add(container).center();
+        voteTable.setVisible(true);
+    }
+
     private void showVoteResult(String winner) {
+        voteTable.setVisible(false); // Hide the buff choosing/waiting panel
         resultLabel.setText("BUFF APPLIED: " + winner);
         resultLabel.setVisible(true);
         com.badlogic.gdx.utils.Timer.schedule(new com.badlogic.gdx.utils.Timer.Task() {

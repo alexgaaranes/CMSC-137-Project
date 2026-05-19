@@ -5,7 +5,7 @@ import java.util.List;
 import java.util.Random;
 
 public class DungeonGenerator {
-    public enum RoomType { SPAWN, ENEMY, SHOP, EXIT }
+    public enum RoomType { SPAWN, ENEMY, SHOP, EXIT, BOSS }
     
     public static class Room {
         public int x, y, w, h;
@@ -49,7 +49,7 @@ public class DungeonGenerator {
                 Room room = new Room(rx, ry, roomSize, roomSize);
                 
                 if (rooms.isEmpty()) room.type = RoomType.SPAWN;
-                else if (rooms.size() == targetRooms - 1) room.type = RoomType.EXIT;
+                else if (rooms.size() == targetRooms - 1) room.type = RoomType.BOSS;
                 
                 grid[curX][curY] = room;
                 rooms.add(room);

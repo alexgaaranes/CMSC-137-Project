@@ -8,6 +8,7 @@ import com.project137.io.screens.MenuScreen;
 public class Main extends Game {
     public SpriteBatch batch;
     public ClientNetworkManager networkManager;
+    public com.project137.io.network.server.ServerNetworkManager localServer;
 
     @Override
     public void create() {
@@ -20,5 +21,8 @@ public class Main extends Game {
     public void dispose() {
         batch.dispose();
         networkManager.disconnect();
+        if (localServer != null) {
+            localServer.stop();
+        }
     }
 }

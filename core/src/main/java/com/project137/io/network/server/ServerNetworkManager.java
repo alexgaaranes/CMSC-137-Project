@@ -18,20 +18,16 @@ public class ServerNetworkManager {
     private boolean running = false;
     private long lastTickTime = System.currentTimeMillis();
 
-    public void start() {
+    public void start() throws IOException {
         running = true;
-        try {
-            serverSocket = new ServerSocket(NetworkConfig.PORT);
-            udpSocket = new DatagramSocket(NetworkConfig.PORT);
+        serverSocket = new ServerSocket(NetworkConfig.PORT);
+        udpSocket = new DatagramSocket(NetworkConfig.PORT);
 
-            Thread.ofVirtual().name("TCP-Accept").start(this::acceptTCPConnections);
-            Thread.ofVirtual().name("UDP-Receive").start(this::receiveUDPPackets);
-            Thread.ofVirtual().name("Game-Loop").start(this::gameLoop);
+        Thread.ofVirtual().name("TCP-Accept").start(this::acceptTCPConnections);
+        Thread.ofVirtual().name("UDP-Receive").start(this::receiveUDPPackets);
+        Thread.ofVirtual().name("Game-Loop").start(this::gameLoop);
 
-            System.out.println("[Server] Started on port " + NetworkConfig.PORT);
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
+        System.out.println("[Server] Started on port " + NetworkConfig.PORT);
     }
 
     private void gameLoop() {

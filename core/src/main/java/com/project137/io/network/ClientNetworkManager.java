@@ -103,6 +103,11 @@ public class ClientNetworkManager {
                         res.read(tcpIn);
                         packet = res;
                     }
+                    case OpCode.TCP_ROOM_PROGRESS -> {
+                        RoomProgressPacket progress = new RoomProgressPacket();
+                        progress.read(tcpIn);
+                        packet = progress;
+                    }
                 }
                 
                 if (packet != null && packetListener != null) {

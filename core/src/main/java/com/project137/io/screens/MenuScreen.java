@@ -48,19 +48,23 @@ public class MenuScreen extends ScreenAdapter {
             @Override
             public void clicked(InputEvent event, float x, float y) {
                 errorLabel.setText("Starting Server...");
-                ServerNetworkManager server = new ServerNetworkManager();
-                server.start();
-                
-                // Allow a small delay for server to bind
-                Gdx.app.postRunnable(() -> {
-                    try {
-                        game.networkManager.connect("127.0.0.1");
-                        game.setScreen(new LobbyScreen(game, true));
-                    } catch (IOException e) {
-                        errorLabel.setText("Failed to host server locally.");
-                        e.printStackTrace();
+                try {
+                    if (game.localServer != null) {
+                        game.localServer.stop();
+                        game.localServer = null;
                     }
-                });
+                    game.networkManager.disconnect();
+
+                    ServerNetworkManager server = new ServerNetworkManager();
+                    server.start();
+                    game.localServer = server;
+
+                    game.networkManager.connect("127.0.0.1");
+                    game.setScreen(new LobbyScreen(game, true));
+                } catch (IOException e) {
+                    errorLabel.setText("Failed to host server locally.");
+                    e.printStackTrace();
+                }
             }
         });
 
@@ -70,6 +74,12 @@ public class MenuScreen extends ScreenAdapter {
                 String ip = ipField.getText();
                 errorLabel.setText("Connecting to " + ip + "...");
                 try {
+                    if (game.localServer != null) {
+                        game.localServer.stop();
+                        game.localServer = null;
+                    }
+                    game.networkManager.disconnect();
+
                     game.networkManager.connect(ip);
                     game.setScreen(new LobbyScreen(game, false));
                 } catch (IOException e) {
