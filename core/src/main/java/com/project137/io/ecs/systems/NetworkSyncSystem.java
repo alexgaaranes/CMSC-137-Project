@@ -19,6 +19,7 @@ public class NetworkSyncSystem extends IteratingSystem {
     private final ComponentMapper<NetworkComponent> nm = ComponentMapper.getFor(NetworkComponent.class);
     private final ComponentMapper<HealthComponent> hm = ComponentMapper.getFor(HealthComponent.class);
     private final ComponentMapper<EnergyComponent> em = ComponentMapper.getFor(EnergyComponent.class);
+    private final ComponentMapper<com.project137.io.ecs.components.PlayerComponent> pm = ComponentMapper.getFor(com.project137.io.ecs.components.PlayerComponent.class);
     private long sequence = 0;
 
     public NetworkSyncSystem(ServerNetworkManager networkManager) {
@@ -46,7 +47,11 @@ public class NetworkSyncSystem extends IteratingSystem {
         EnergyComponent ec = em.get(entity);
         if (hc != null) {
             float energy = (ec != null) ? ec.currentEnergy : 0;
-            networkManager.broadcastUDP(new ResourceUpdatePacket(net.id, hc.currentHealth, energy));
+            float maxEnergy = (ec != null) ? ec.maxEnergy : 0;
+            float progress = 0;
+            com.project137.io.ecs.components.PlayerComponent pc = pm.get(entity);
+            if (pc != null) progress = pc.reviveProgress;
+            networkManager.broadcastUDP(new ResourceUpdatePacket(net.id, hc.currentHealth, hc.maxHealth, energy, maxEnergy, progress));
         }
     }
 }

@@ -8,11 +8,13 @@ import com.badlogic.gdx.math.Vector2;
 import com.project137.io.ecs.components.BodyComponent;
 import com.project137.io.ecs.components.EnemyComponent;
 import com.project137.io.ecs.components.PlayerComponent;
+import com.project137.io.ecs.components.HealthComponent;
 
 public class EnemyAISystem extends IteratingSystem {
     private final ComponentMapper<BodyComponent> bm = ComponentMapper.getFor(BodyComponent.class);
     private final ComponentMapper<EnemyComponent> em = ComponentMapper.getFor(EnemyComponent.class);
-    private final Family playerFamily = Family.all(PlayerComponent.class, BodyComponent.class).get();
+    private final ComponentMapper<HealthComponent> hm = ComponentMapper.getFor(HealthComponent.class);
+    private final Family playerFamily = Family.all(PlayerComponent.class, BodyComponent.class, HealthComponent.class).get();
 
     public EnemyAISystem() {
         super(Family.all(EnemyComponent.class, BodyComponent.class).get());
@@ -22,6 +24,10 @@ public class EnemyAISystem extends IteratingSystem {
     protected void processEntity(Entity entity, float deltaTime) {
         BodyComponent body = bm.get(entity);
         EnemyComponent enemy = em.get(entity);
+        
+        if (enemy.attackCooldown > 0) {
+            enemy.attackCooldown -= deltaTime;
+        }
         
         // If not active, ensure velocity is zero and skip
         if (enemy.detectRange <= 0) {
@@ -35,6 +41,9 @@ public class EnemyAISystem extends IteratingSystem {
         float minDist = enemy.detectRange;
         
         for (Entity player : getEngine().getEntitiesFor(playerFamily)) {
+            HealthComponent hc = player.getComponent(HealthComponent.class);
+            if (hc == null || !hc.isAlive()) continue;
+
             BodyComponent pBody = bm.get(player);
             float dist = body.body.getPosition().dst(pBody.body.getPosition());
             if (dist < minDist) {
@@ -48,6 +57,14 @@ public class EnemyAISystem extends IteratingSystem {
             Vector2 pPos = bm.get(nearestPlayer).body.getPosition();
             Vector2 direction = pPos.cpy().sub(body.body.getPosition()).nor();
             body.body.setLinearVelocity(direction.scl(enemy.speed));
+            
+            if (minDist < 1.2f && enemy.attackCooldown <= 0) {
+                HealthComponent hc = hm.get(nearestPlayer);
+                if (hc != null && hc.isAlive()) {
+                    hc.takeDamage(enemy.damage);
+                    enemy.attackCooldown = enemy.attackRate;
+                }
+            }
         } else {
             enemy.state = EnemyComponent.State.IDLE;
             body.body.setLinearVelocity(0, 0);

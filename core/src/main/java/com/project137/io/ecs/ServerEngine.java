@@ -17,6 +17,7 @@ import com.project137.io.world.DungeonMap;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -41,13 +42,20 @@ public class ServerEngine {
     private final AtomicInteger nextCrateId = new AtomicInteger(3000);
     private final AtomicInteger nextItemId = new AtomicInteger(5000);
     
-    private final DungeonMap map;
+    private DungeonMap map;
     private final DungeonGenerator generator;
     private final ServerNetworkManager networkManager;
     private final Random random = new Random();
     
     private final List<Entity> removalQueue = new ArrayList<>();
+    private final List<Body> wallBodies = new ArrayList<>();
     private final List<Body> gateBodies = new ArrayList<>();
+    private final List<Body> bodiesToRemove = new ArrayList<>();
+    private final java.util.concurrent.ConcurrentLinkedQueue<Runnable> mainThreadTasks = new java.util.concurrent.ConcurrentLinkedQueue<>();
+    private boolean gameOver = false;
+    private boolean isVoting = false;
+    private final ConcurrentHashMap<Integer, Integer> playerVotes = new ConcurrentHashMap<>();
+    private final String[] currentBuffOptions = {"Vitality (+20 Max HP)", "Adrenaline (+20% Speed)", "Power (+5 Damage)", "Efficiency (-25% Energy Cost)"};
 
     public ServerEngine(ServerNetworkManager networkManager) {
         this.networkManager = networkManager;
@@ -70,11 +78,14 @@ public class ServerEngine {
     }
 
     private void createPhysicsObjects() {
+        for (Body b : wallBodies) bodiesToRemove.add(b);
+        wallBodies.clear();
         for (int x = 0; x < map.width; x++) {
             for (int y = 0; y < map.height; y++) {
                 int tile = map.tiles[x][y];
                 if (tile == DungeonMap.TILE_WALL) {
-                    createStaticBox(x, y, BIT_WALL, (short)(BIT_PLAYER | BIT_ENEMY | BIT_PROJECTILE));
+                    Body b = createStaticBox(x, y, BIT_WALL, (short)(BIT_PLAYER | BIT_ENEMY | BIT_PROJECTILE));
+                    wallBodies.add(b);
                 } else if (tile == DungeonMap.TILE_CRATE) {
                     spawnCrate(x, y);
                 }
@@ -82,7 +93,7 @@ public class ServerEngine {
         }
     }
 
-    private void createStaticBox(int tx, int ty, short category, short mask) {
+    private Body createStaticBox(int tx, int ty, short category, short mask) {
         BodyDef bodyDef = new BodyDef();
         bodyDef.type = BodyDef.BodyType.StaticBody;
         bodyDef.position.set((tx * 16 + 8) / NetworkConfig.PPM, (ty * 16 + 8) / NetworkConfig.PPM);
@@ -95,6 +106,7 @@ public class ServerEngine {
         fdef.filter.maskBits = mask;
         body.createFixture(fdef);
         box.dispose();
+        return body;
     }
 
     private void spawnCrate(int tx, int ty) {
@@ -192,6 +204,8 @@ public class ServerEngine {
         EnemyComponent enemy = new EnemyComponent();
         enemy.detectRange = 0; 
         enemy.speed = t.speed;
+        enemy.damage = t.damage;
+        enemy.attackRate = t.attackRate;
         entity.add(enemy);
         entity.add(new HealthComponent(t.hp));
         
@@ -268,6 +282,8 @@ public class ServerEngine {
                 if (ua instanceof Entity ea && ub instanceof Entity eb) {
                     checkHit(ea, eb);
                     checkHit(eb, ea);
+                    checkPickup(ea, eb);
+                    checkPickup(eb, ea);
                 }
                 checkWallHit(fa, fb);
                 checkWallHit(fb, fa);
@@ -291,23 +307,53 @@ public class ServerEngine {
         }
     }
 
+    private void checkPickup(Entity a, Entity b) {
+        PlayerComponent pc = a.getComponent(PlayerComponent.class);
+        InteractableComponent item = b.getComponent(InteractableComponent.class);
+        if (pc != null && !pc.isDead && item != null && "health_orb".equals(item.templateId)) {
+            HealthComponent hc = a.getComponent(HealthComponent.class);
+            if (hc != null && hc.currentHealth < hc.maxHealth) {
+                hc.currentHealth = Math.min(hc.maxHealth, hc.currentHealth + 10);
+                synchronized (removalQueue) {
+                    if (!removalQueue.contains(b)) removalQueue.add(b);
+                }
+            }
+        }
+    }
+
     private void checkHit(Entity projectile, Entity target) {
         ProjectileComponent pc = projectile.getComponent(ProjectileComponent.class);
         HealthComponent hc = target.getComponent(HealthComponent.class);
-        if (pc != null && hc != null) {
-            hc.currentHealth -= pc.damage;
+        if (pc != null && hc != null && hc.isAlive()) {
+            hc.takeDamage(pc.damage);
             synchronized (removalQueue) {
                 if (!removalQueue.contains(projectile)) removalQueue.add(projectile);
-                if (hc.currentHealth <= 0 && !removalQueue.contains(target)) removalQueue.add(target);
+                if (hc.currentHealth <= 0 && !removalQueue.contains(target)) {
+                    if (target.getComponent(PlayerComponent.class) == null) {
+                        removalQueue.add(target);
+                    }
+                }
             }
         }
     }
 
     public void update(float delta) {
+        Runnable task;
+        while ((task = mainThreadTasks.poll()) != null) {
+            task.run();
+        }
+
+        if (isVoting) return; // Pause updates during voting
+        
         processOneShotEvents();
         processInputs(delta);
         checkRoomStates();
         engine.update(delta);
+        
+        synchronized (bodiesToRemove) {
+            for (Body b : bodiesToRemove) world.destroyBody(b);
+            bodiesToRemove.clear();
+        }
         
         synchronized (removalQueue) {
             for (Entity entity : removalQueue) {
@@ -322,6 +368,9 @@ public class ServerEngine {
                         if (tx >= 0 && tx < map.width && ty >= 0 && ty < map.height) {
                             map.tiles[tx][ty] = DungeonMap.TILE_FLOOR;
                             networkManager.broadcastTCP(new TileUpdatePacket(tx, ty, DungeonMap.TILE_FLOOR));
+                            if (random.nextFloat() < 0.05f) {
+                                spawnItem("health_orb", tx, ty);
+                            }
                         }
                     }
                 }
@@ -343,6 +392,81 @@ public class ServerEngine {
                 pc.lifeTime -= delta;
                 if (pc.lifeTime <= 0) {
                     synchronized (removalQueue) { if (!removalQueue.contains(entity)) removalQueue.add(entity); }
+                }
+            }
+            HealthComponent hc = entity.getComponent(HealthComponent.class);
+            if (hc != null && hc.currentHealth <= 0) {
+                PlayerComponent playerComp = entity.getComponent(PlayerComponent.class);
+                if (playerComp != null) {
+                    playerComp.isDead = true;
+                    // Ensure velocity is zero when dead
+                    BodyComponent bc = entity.getComponent(BodyComponent.class);
+                    if (bc != null && bc.body != null) bc.body.setLinearVelocity(0, 0);
+                } else {
+                    synchronized (removalQueue) { if (!removalQueue.contains(entity)) removalQueue.add(entity); }
+                }
+            }
+
+            // Send resource updates for players
+            PlayerComponent pc_player = entity.getComponent(PlayerComponent.class);
+            if (pc_player != null) {
+                HealthComponent hc_player = entity.getComponent(HealthComponent.class);
+                EnergyComponent ec_player = entity.getComponent(EnergyComponent.class);
+                if (hc_player != null && ec_player != null) {
+                    networkManager.broadcastUDP(new ResourceUpdatePacket(
+                        entity.getComponent(NetworkComponent.class).id,
+                        hc_player.currentHealth, hc_player.maxHealth,
+                        ec_player.currentEnergy, ec_player.maxEnergy,
+                        pc_player.reviveProgress
+                    ));
+                }
+            }
+        }
+
+        if (!gameOver && networkManager.hasClients()) {
+            boolean playersAlive = false;
+            for (Entity entity : entities.values()) {
+                PlayerComponent pc = entity.getComponent(PlayerComponent.class);
+                if (pc != null && !pc.isDead) {
+                    playersAlive = true;
+                    break;
+                }
+            }
+            if (!playersAlive) {
+                gameOver = true;
+                networkManager.broadcastTCP(new GameOverPacket(false));
+                networkManager.stop();
+            }
+        }
+
+        // Handle Revival Progress
+        for (Entity entity : entities.values()) {
+            PlayerComponent pc = entity.getComponent(PlayerComponent.class);
+            if (pc != null && pc.isDead && pc.reviverId != null) {
+                Entity reviver = entities.get(pc.reviverId);
+                boolean valid = false;
+                if (reviver != null) {
+                    PlayerComponent rpc = reviver.getComponent(PlayerComponent.class);
+                    BodyComponent rbc = reviver.getComponent(BodyComponent.class);
+                    BodyComponent dbc = entity.getComponent(BodyComponent.class);
+                    if (rpc != null && !rpc.isDead && rbc != null && dbc != null) {
+                        float dist = rbc.body.getPosition().dst(dbc.body.getPosition());
+                        if (dist < 1.5f) {
+                            valid = true;
+                            pc.reviveProgress += delta;
+                            if (pc.reviveProgress >= 5.0f) {
+                                pc.isDead = false;
+                                pc.reviveProgress = 0;
+                                pc.reviverId = null;
+                                HealthComponent hc = entity.getComponent(HealthComponent.class);
+                                if (hc != null) hc.currentHealth = 50f;
+                            }
+                        }
+                    }
+                }
+                if (!valid) {
+                    pc.reviveProgress = 0;
+                    pc.reviverId = null;
                 }
             }
         }
@@ -397,9 +521,136 @@ public class ServerEngine {
                         }
                     }
                 }
-                if (!enemiesAlive) unlockRoom(room);
+                if (!enemiesAlive) {
+                    System.out.println("[Progression] Room at (" + room.x + "," + room.y + ") cleared! Opening gates.");
+                    unlockRoom(room);
+                    checkLevelCleared();
+                }
             }
         }
+    }
+
+    private void checkLevelCleared() {
+        boolean allCleared = true;
+        for (DungeonGenerator.Room room : generator.rooms) {
+            if (room.type == DungeonGenerator.RoomType.ENEMY && !room.cleared) {
+                allCleared = false;
+                break;
+            }
+        }
+        if (allCleared) {
+            System.out.println("[Progression] ALL ROOMS CLEARED! Starting buff vote...");
+            startBuffVote();
+        }
+    }
+
+    private void startBuffVote() {
+        isVoting = true;
+        playerVotes.clear();
+        networkManager.broadcastTCP(new BuffPackets.BuffVoteStartPacket(currentBuffOptions));
+    }
+
+    public void handleBuffVote(int playerId, int buffIndex) {
+        if (!isVoting) return;
+        playerVotes.put(playerId, buffIndex);
+        // Check if everyone has voted
+        if (playerVotes.size() >= networkManager.hasClientsCount()) {
+            mainThreadTasks.add(this::applyVoteResults);
+        }
+    }
+
+    private void applyVoteResults() {
+        for (Map.Entry<Integer, Integer> entry : playerVotes.entrySet()) {
+            int playerId = entry.getKey();
+            int buffIndex = entry.getValue();
+            String buff = currentBuffOptions[buffIndex];
+            
+            // Find the player entity
+            for (Entity e : entities.values()) {
+                NetworkComponent net = e.getComponent(NetworkComponent.class);
+                if (net != null && net.id == playerId) {
+                    PlayerComponent pc = e.getComponent(PlayerComponent.class);
+                    if (pc != null) {
+                        pc.buffs.add(buff);
+                        // Send individual notification to player
+                        networkManager.sendTCPTo(playerId, new BuffPackets.BuffVoteResultPacket(buff));
+                    }
+                    break;
+                }
+            }
+        }
+        
+        System.out.println("[Progression] All players picked individual buffs. Starting next level.");
+        isVoting = false;
+        mainThreadTasks.add(this::nextLevel);
+    }
+
+    private void nextLevel() {
+        // Clear old entities (except players)
+        for (Integer id : entities.keySet()) {
+            if (id >= 10) { 
+                Entity e = entities.get(id);
+                synchronized (removalQueue) { if (!removalQueue.contains(e)) removalQueue.add(e); }
+            }
+        }
+
+        // Generate new map
+        generator.rooms.clear();
+        this.map = generator.generate(160, 160);
+        
+        createPhysicsObjects();
+        spawnInitialEnemies();
+        spawnInitialItems();
+        
+        networkManager.broadcastTCP(new MapDataPacket(map));
+        
+        DungeonGenerator.Room spawnRoom = generator.rooms.get(0);
+        float spawnX = (spawnRoom.centerX() * 16 + 8) / NetworkConfig.PPM;
+        float spawnY = (spawnRoom.centerY() * 16 + 8) / NetworkConfig.PPM;
+        
+        for (Entity entity : entities.values()) {
+            PlayerComponent pc = entity.getComponent(PlayerComponent.class);
+            if (pc != null) {
+                // Reset player state for new level
+                pc.isDead = false;
+                pc.reviveProgress = 0;
+                pc.reviverId = null;
+                
+                BodyComponent bc = entity.getComponent(BodyComponent.class);
+                NetworkComponent net = entity.getComponent(NetworkComponent.class);
+                if (bc != null && bc.body != null) {
+                    bc.body.setTransform(spawnX, spawnY, 0);
+                    bc.body.setLinearVelocity(0, 0);
+                    bc.body.setAwake(true);
+                }
+                networkManager.broadcastTCP(new TeleportPacket(net.id, spawnX * NetworkConfig.PPM, spawnY * NetworkConfig.PPM));
+                
+                // Apply all active buffs to player stats FIRST so max HP is correct
+                applyBuffsToPlayer(entity);
+
+                // Heal players slightly on next level (Second Wind)
+                HealthComponent hc = entity.getComponent(HealthComponent.class);
+                if (hc != null) hc.currentHealth = Math.min(hc.maxHealth, hc.currentHealth + 20);
+            }
+        }
+    }
+
+    private void applyBuffsToPlayer(Entity player) {
+        HealthComponent hc = player.getComponent(HealthComponent.class);
+        PlayerComponent pc = player.getComponent(PlayerComponent.class);
+        if (pc == null || hc == null) return;
+
+        float hpBonus = 0;
+        for (String buff : pc.buffs) {
+            if (buff.contains("Vitality")) hpBonus += 20;
+        }
+
+        float oldMax = hc.maxHealth;
+        hc.maxHealth = 100 + hpBonus;
+        if (hc.maxHealth > oldMax) {
+            hc.currentHealth += (hc.maxHealth - oldMax);
+        }
+        hc.currentHealth = Math.min(hc.maxHealth, hc.currentHealth);
     }
 
     private void lockRoom(DungeonGenerator.Room room, float teleportX, float teleportY) {
@@ -458,7 +709,7 @@ public class ServerEngine {
             int ty = (int)(body.getPosition().y * NetworkConfig.PPM / 16);
             map.tiles[tx][ty] = DungeonMap.TILE_FLOOR;
             networkManager.broadcastTCP(new TileUpdatePacket(tx, ty, DungeonMap.TILE_FLOOR));
-            world.destroyBody(body);
+            bodiesToRemove.add(body);
         }
         gateBodies.clear();
     }
@@ -473,7 +724,15 @@ public class ServerEngine {
             InventoryComponent inv = entity.getComponent(InventoryComponent.class);
             EnergyComponent ec = entity.getComponent(EnergyComponent.class);
             if (bc != null && bc.body != null) {
+                PlayerComponent pc = entity.getComponent(PlayerComponent.class);
+                if (pc != null && pc.isDead) {
+                    bc.body.setLinearVelocity(0, 0);
+                    continue;
+                }
+                
                 float speed = 6.25f;
+                for (String buff : pc.buffs) if (buff.contains("Adrenaline")) speed *= 1.2f;
+                
                 Vector2 velocity = new Vector2(0, 0);
                 if (input.up) velocity.y += 1;
                 if (input.down) velocity.y -= 1;
@@ -483,10 +742,18 @@ public class ServerEngine {
                 bc.body.setLinearVelocity(velocity);
                 if (input.attack && wc != null && wc.cooldown <= 0) {
                     WeaponTemplate template = DataManager.getWeapon(inv.weaponSlots[inv.activeSlot]);
-                    if (template != null && ec != null && ec.currentEnergy >= template.energyCost) {
-                        spawnProjectile(playerId, bc.body.getPosition().x, bc.body.getPosition().y, input.targetAngle, wc.damage, wc.projectileSpeed);
-                        wc.cooldown = wc.fireRate;
-                        ec.currentEnergy -= template.energyCost;
+                    if (template != null && ec != null) {
+                        float cost = template.energyCost;
+                        for (String buff : pc.buffs) if (buff.contains("Efficiency")) cost *= 0.75f;
+                        
+                        if (ec.currentEnergy >= cost) {
+                            float damage = wc.damage;
+                            for (String buff : pc.buffs) if (buff.contains("Power")) damage += 5;
+                            
+                            spawnProjectile(playerId, bc.body.getPosition().x, bc.body.getPosition().y, input.targetAngle, damage, wc.projectileSpeed);
+                            wc.cooldown = wc.fireRate;
+                            ec.currentEnergy -= cost;
+                        }
                     }
                 }
             }
@@ -498,7 +765,7 @@ public class ServerEngine {
         float minDist = 1.5f; 
         for (Entity e : entities.values()) {
             InteractableComponent interact = e.getComponent(InteractableComponent.class);
-            if (interact != null) {
+            if (interact != null && !"health_orb".equals(interact.templateId)) {
                 BodyComponent itemBc = e.getComponent(BodyComponent.class);
                 float dist = bc.body.getPosition().dst(itemBc.body.getPosition());
                 if (dist < minDist) {
@@ -517,6 +784,20 @@ public class ServerEngine {
                 spawnItem(oldWeapon, (int)(bc.body.getPosition().x * NetworkConfig.PPM / 16), (int)(bc.body.getPosition().y * NetworkConfig.PPM / 16));
             }
             networkManager.broadcastTCP(new WeaponChangePacket(playerId, inv.weaponSlots[0], inv.weaponSlots[1], inv.activeSlot));
+        }
+
+        // Check for dead players to start resurrection
+        for (Entity e : entities.values()) {
+            PlayerComponent targetPc = e.getComponent(PlayerComponent.class);
+            if (targetPc != null && targetPc.isDead && e != entities.get(playerId)) {
+                BodyComponent targetBc = e.getComponent(BodyComponent.class);
+                if (bc.body.getPosition().dst(targetBc.body.getPosition()) < 1.5f) {
+                    if (targetPc.reviverId == null) {
+                        targetPc.reviverId = playerId;
+                        targetPc.reviveProgress = 0;
+                    }
+                }
+            }
         }
     }
 
@@ -578,6 +859,21 @@ public class ServerEngine {
             BodyComponent bc = entity.getComponent(BodyComponent.class);
             if (bc != null && bc.body != null) world.destroyBody(bc.body);
             engine.removeEntity(entity);
+        }
+    }
+
+    public void startGame() {
+        this.gameOver = false;
+        // Also reset any existing players just in case
+        for (Entity entity : entities.values()) {
+            PlayerComponent pc = entity.getComponent(PlayerComponent.class);
+            if (pc != null) {
+                pc.isDead = false;
+                pc.reviveProgress = 0;
+                pc.reviverId = null;
+                HealthComponent hc = entity.getComponent(HealthComponent.class);
+                if (hc != null) hc.currentHealth = hc.maxHealth;
+            }
         }
     }
 
