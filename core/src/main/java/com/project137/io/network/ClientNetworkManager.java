@@ -12,11 +12,17 @@ public class ClientNetworkManager {
     private DataOutputStream tcpOut;
     private int playerId;
     private boolean running = false;
+    private boolean threadsStarted = false;
     private Consumer<Packet> packetListener;
     private Runnable onDisconnect;
 
     public void setPacketListener(Consumer<Packet> listener) {
         this.packetListener = listener;
+        if (listener != null && running && !threadsStarted) {
+            threadsStarted = true;
+            Thread.ofVirtual().name("Client-TCP").start(this::listenTCP);
+            Thread.ofVirtual().name("Client-UDP").start(this::listenUDP);
+        }
     }
 
     public void setOnDisconnect(Runnable callback) {
@@ -29,9 +35,7 @@ public class ClientNetworkManager {
         tcpOut = new DataOutputStream(tcpSocket.getOutputStream());
         udpSocket = new DatagramSocket();
         running = true;
-
-        Thread.ofVirtual().name("Client-TCP").start(this::listenTCP);
-        Thread.ofVirtual().name("Client-UDP").start(this::listenUDP);
+        threadsStarted = false;
     }
 
     private void listenTCP() {

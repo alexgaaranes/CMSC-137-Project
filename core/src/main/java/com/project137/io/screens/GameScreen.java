@@ -402,7 +402,7 @@ public class GameScreen extends ScreenAdapter {
 
     private void showVoteDialog(String[] options) {
         voteTable.clear();
-        Label title = new Label("CHOOSE A TEAM BUFF", skin);
+        Label title = new Label("CHOOSE A BUFF FOR  THE NEXT LEVEL", skin);
         title.setFontScale(1.5f);
         title.setColor(Color.CYAN);
         voteTable.add(title).pad(20).row();
