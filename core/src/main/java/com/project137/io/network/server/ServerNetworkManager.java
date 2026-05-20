@@ -56,8 +56,27 @@ public class ServerNetworkManager {
 
                 System.out.println("[Server] Client " + id + " connected.");
 
-                gameEngine.addPlayer(id);
+                gameEngine.postRunnable(() -> gameEngine.addPlayer(id));
                 sendTCP(client, new WelcomePacket(id));
+                
+                // Synchronize existing ground items and crates to the new client
+                for (java.util.Map.Entry<Integer, com.badlogic.ashley.core.Entity> entry : gameEngine.getEntities().entrySet()) {
+                    int entId = entry.getKey();
+                    com.badlogic.ashley.core.Entity ent = entry.getValue();
+                    com.project137.io.ecs.components.BodyComponent bc = ent.getComponent(com.project137.io.ecs.components.BodyComponent.class);
+                    if (bc != null && bc.body != null) {
+                        float px = bc.body.getPosition().x * NetworkConfig.PPM;
+                        float py = bc.body.getPosition().y * NetworkConfig.PPM;
+                        
+                        if (entId >= 3000 && entId < 4000) {
+                            sendTCP(client, new ItemSpawnPacket(entId, "crate", px, py));
+                        } else if (entId >= 5000) {
+                            com.project137.io.ecs.components.InteractableComponent ic = ent.getComponent(com.project137.io.ecs.components.InteractableComponent.class);
+                            String template = (ic != null) ? ic.templateId : "revolver";
+                            sendTCP(client, new ItemSpawnPacket(entId, template, px, py));
+                        }
+                    }
+                }
                 
                 // Notify all clients about lobby state
                 broadcastLobbyUpdate();
@@ -104,7 +123,8 @@ public class ServerNetworkManager {
             System.err.println("[Server] Error handling client " + client.id);
             t.printStackTrace();
         } finally {
-            gameEngine.removePlayer(client.id);
+            final int idToRemove = client.id;
+            gameEngine.postRunnable(() -> gameEngine.removePlayer(idToRemove));
             clients.remove(client.id);
             broadcastLobbyUpdate();
             client.close();

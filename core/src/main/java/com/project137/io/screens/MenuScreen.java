@@ -67,7 +67,15 @@ public class MenuScreen extends ScreenAdapter {
         TextButton hostButton = new TextButton("Host Game", skin);
         
         Label ipLabel = new Label("Enter Host IP:", skin);
-        TextField ipField = new TextField("127.0.0.1", skin);
+        final TextField ipField = new TextField("127.0.0.1", skin);
+        ipField.addListener(new com.badlogic.gdx.scenes.scene2d.utils.FocusListener() {
+            @Override
+            public void keyboardFocusChanged(com.badlogic.gdx.scenes.scene2d.utils.FocusListener.FocusEvent event, com.badlogic.gdx.scenes.scene2d.Actor actor, boolean focused) {
+                if (focused) {
+                    ipField.selectAll();
+                }
+            }
+        });
         TextButton joinButton = new TextButton("Join Game", skin);
         
         errorLabel = new Label("", skin);

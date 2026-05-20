@@ -1055,4 +1055,6 @@ public class ServerEngine {
     }
 
     public DungeonMap getMap() { return map; }
+    public ConcurrentHashMap<Integer, Entity> getEntities() { return entities; }
+    public void postRunnable(Runnable r) { mainThreadTasks.add(r); }
 }
