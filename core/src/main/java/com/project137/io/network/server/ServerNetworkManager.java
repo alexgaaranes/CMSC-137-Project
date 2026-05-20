@@ -64,7 +64,7 @@ public class ServerNetworkManager {
 
                 Thread.ofVirtual().name("TCP-Client-" + id).start(() -> handleTCPClient(client));
 
-            } catch (IOException e) {
+            } catch (Throwable e) {
                 if (running) e.printStackTrace();
             }
         }
@@ -85,12 +85,24 @@ public class ServerNetworkManager {
                     BuffPackets.BuffVoteSubmitPacket vote = new BuffPackets.BuffVoteSubmitPacket();
                     vote.read(client.in);
                     gameEngine.handleBuffVote(client.id, vote.buffIndex);
+                } else if (opCode == OpCode.UDP_HELLO) {
+                    HelloPacket hello = new HelloPacket();
+                    hello.read(client.in);
+                    client.udpAddress = client.tcpSocket.getInetAddress();
+                    client.udpPort = client.tcpSocket.getPort();
+                } else if (opCode == OpCode.UDP_INPUT) {
+                    InputPacket input = new InputPacket();
+                    input.read(client.in);
+                    gameEngine.queueInput(input);
                 } else if (opCode == OpCode.TCP_DISCONNECT) {
                     break;
                 }
             }
         } catch (IOException e) {
             System.out.println("[Server] Client " + client.id + " disconnected.");
+        } catch (Throwable t) {
+            System.err.println("[Server] Error handling client " + client.id);
+            t.printStackTrace();
         } finally {
             gameEngine.removePlayer(client.id);
             clients.remove(client.id);
@@ -164,6 +176,8 @@ public class ServerNetworkManager {
     }
 
     public void broadcastUDP(Packet packet) {
+        broadcastTCP(packet); // Always send TCP for absolute reliability
+
         try {
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
             DataOutputStream dos = new DataOutputStream(baos);
@@ -178,7 +192,7 @@ public class ServerNetworkManager {
                 }
             }
         } catch (IOException e) {
-            e.printStackTrace();
+            // UDP silent failure is okay since we fell back to TCP
         }
     }
 

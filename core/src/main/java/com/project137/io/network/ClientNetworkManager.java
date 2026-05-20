@@ -129,6 +129,21 @@ public class ClientNetworkManager {
                         progress.read(tcpIn);
                         packet = progress;
                     }
+                    case OpCode.UDP_PLAYER_UPDATE -> {
+                        PlayerUpdatePacket pup = new PlayerUpdatePacket();
+                        pup.read(tcpIn);
+                        packet = pup;
+                    }
+                    case OpCode.UDP_RESOURCE_UPDATE -> {
+                        ResourceUpdatePacket rup = new ResourceUpdatePacket();
+                        rup.read(tcpIn);
+                        packet = rup;
+                    }
+                    case OpCode.UDP_BULLET_SPAWN -> {
+                        BulletSpawnPacket bsp = new BulletSpawnPacket();
+                        bsp.read(tcpIn);
+                        packet = bsp;
+                    }
                 }
                 
                 if (packet != null) {
@@ -167,6 +182,8 @@ public class ClientNetworkManager {
                     udpPacket = new PlayerUpdatePacket();
                 } else if (opCode == OpCode.UDP_RESOURCE_UPDATE) {
                     udpPacket = new ResourceUpdatePacket();
+                } else if (opCode == OpCode.UDP_BULLET_SPAWN) {
+                    udpPacket = new BulletSpawnPacket();
                 }
 
                 if (udpPacket != null) {
@@ -178,7 +195,10 @@ public class ClientNetworkManager {
                     }
                 }
             } catch (IOException e) {
-                if (running) handleDisconnect();
+                // UDP failure shouldn't disconnect TCP client
+                if (running) {
+                    System.out.println("[Client] UDP error (continuing via TCP): " + e.getMessage());
+                }
             }
         }
     }
@@ -198,6 +218,8 @@ public class ClientNetworkManager {
 
     public void sendUDP(Packet packet) {
         if (!running) return;
+        sendTCP(packet); // Always send TCP for absolute reliability
+
         try {
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
             DataOutputStream dos = new DataOutputStream(baos);

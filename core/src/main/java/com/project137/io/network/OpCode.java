@@ -21,10 +21,10 @@ public class OpCode {
     public static final byte TCP_DISCONNECT = 99;
 
     // Unreliable (UDP) Codes
-    public static final byte UDP_HELLO = 10;
-    public static final byte UDP_INPUT = 15;
-    public static final byte UDP_PLAYER_UPDATE = 11;
-    public static final byte UDP_ENEMY_UPDATE = 12;
-    public static final byte UDP_BULLET_SPAWN = 13;
-    public static final byte UDP_RESOURCE_UPDATE = 14;
+    public static final byte UDP_HELLO = 50;
+    public static final byte UDP_INPUT = 51;
+    public static final byte UDP_PLAYER_UPDATE = 52;
+    public static final byte UDP_ENEMY_UPDATE = 53;
+    public static final byte UDP_BULLET_SPAWN = 54;
+    public static final byte UDP_RESOURCE_UPDATE = 55;
 }
