@@ -162,6 +162,7 @@ public class ServerEngine {
         entity.add(net);
         
         EnemyComponent enemy = new EnemyComponent();
+        enemy.templateId = "boss_goblin";
         enemy.detectRange = 1000f; 
         enemy.speed = 3.5f; // fast
         enemy.damage = 25f; // high damage
@@ -191,6 +192,7 @@ public class ServerEngine {
         engine.addEntity(entity);
         entities.put(id, entity);
 
+        networkManager.broadcastTCP(new ItemSpawnPacket(id, "boss_goblin", body.getPosition().x * NetworkConfig.PPM, body.getPosition().y * NetworkConfig.PPM));
         broadcastRoomProgress();
     }
 
@@ -249,6 +251,8 @@ public class ServerEngine {
         entity.add(bc);
         engine.addEntity(entity);
         entities.put(id, entity);
+        
+        networkManager.broadcastTCP(new ItemSpawnPacket(id, "crate", body.getPosition().x * NetworkConfig.PPM, body.getPosition().y * NetworkConfig.PPM));
     }
 
     private void spawnInitialEnemies() {
@@ -315,6 +319,7 @@ public class ServerEngine {
         entity.add(net);
         
         EnemyComponent enemy = new EnemyComponent();
+        enemy.templateId = t.id;
         enemy.detectRange = 0; 
         enemy.speed = t.speed;
         enemy.damage = t.damage;
@@ -345,9 +350,10 @@ public class ServerEngine {
         entity.add(bc);
         engine.addEntity(entity);
         entities.put(id, entity);
+        networkManager.broadcastTCP(new ItemSpawnPacket(id, t.id, body.getPosition().x * NetworkConfig.PPM, body.getPosition().y * NetworkConfig.PPM));
     }
 
-    public void spawnProjectile(int ownerId, float x, float y, float angle, float damage, float speed) {
+    public void spawnProjectile(int ownerId, float x, float y, float angle, float damage, float speed, String type) {
         int id = nextProjectileId.getAndIncrement();
         Entity entity = new Entity();
         NetworkComponent net = new NetworkComponent();
@@ -356,6 +362,7 @@ public class ServerEngine {
         ProjectileComponent pc = new ProjectileComponent();
         pc.ownerId = ownerId;
         pc.damage = damage;
+        pc.templateId = type; // Store the type in pc for network sync/client identification
         entity.add(pc);
         
         BodyDef bodyDef = new BodyDef();
@@ -382,6 +389,8 @@ public class ServerEngine {
         entity.add(bc);
         engine.addEntity(entity);
         entities.put(id, entity);
+
+        networkManager.broadcastUDP(new BulletSpawnPacket(id, x * NetworkConfig.PPM, y * NetworkConfig.PPM, velocity.x * NetworkConfig.PPM, velocity.y * NetworkConfig.PPM, type));
     }
 
     private void setupContactListener() {
@@ -481,7 +490,7 @@ public class ServerEngine {
                         if (tx >= 0 && tx < map.width && ty >= 0 && ty < map.height) {
                             map.tiles[tx][ty] = DungeonMap.TILE_FLOOR;
                             networkManager.broadcastTCP(new TileUpdatePacket(tx, ty, DungeonMap.TILE_FLOOR));
-                            if (random.nextFloat() < 0.15f) {
+                            if (random.nextFloat() < 0.05f) {
                                 spawnItem("health_orb", tx, ty);
                             }
                         }
@@ -912,7 +921,12 @@ public class ServerEngine {
                             float damage = wc.damage;
                             for (String buff : pc.buffs) if (buff.contains("Power")) damage += 5;
                             
-                            spawnProjectile(playerId, bc.body.getPosition().x, bc.body.getPosition().y, input.targetAngle, damage, wc.projectileSpeed);
+                            String type = "long_bullet";
+                            String weaponId = inv.weaponSlots[inv.activeSlot];
+                            if ("heavy_cannon".equals(weaponId)) type = "rocket";
+                            else if ("starter_pistol".equals(weaponId)) type = "small_bullet";
+                            
+                            spawnProjectile(playerId, bc.body.getPosition().x, bc.body.getPosition().y, input.targetAngle, damage, wc.projectileSpeed, type);
                             wc.cooldown = wc.fireRate;
                             ec.currentEnergy -= cost;
                         }

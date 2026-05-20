@@ -7,6 +7,7 @@ import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.g2d.BitmapFont;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
+import com.badlogic.gdx.graphics.g2d.freetype.FreeTypeFontGenerator;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.math.Vector2;
@@ -22,10 +23,8 @@ import com.badlogic.gdx.utils.viewport.ExtendViewport;
 import com.badlogic.gdx.utils.viewport.ScreenViewport;
 import com.project137.io.Main;
 import com.project137.io.network.*;
+import com.project137.io.ecs.data.DataManager;
 import com.project137.io.world.DungeonMap;                      
-import com.project137.io.world.DungeonRenderer;
-import com.project137.io.network.*;
-import com.project137.io.world.DungeonMap;
 import com.project137.io.world.DungeonRenderer;
 
 import java.util.HashSet;
@@ -68,6 +67,33 @@ public class GameScreen extends ScreenAdapter {
     private com.badlogic.gdx.graphics.g2d.Animation<com.badlogic.gdx.graphics.g2d.TextureRegion> skelIdleAnim, skelRunAnim, skelAttackAnim, skelDeathAnim;
     private com.badlogic.gdx.graphics.g2d.Animation<com.badlogic.gdx.graphics.g2d.TextureRegion> vampIdleAnim, vampRunAnim, vampAttackAnim, vampDeathAnim;
     private com.badlogic.gdx.graphics.g2d.Animation<com.badlogic.gdx.graphics.g2d.TextureRegion> bossIdleAnim, bossHitAnim;
+    private com.badlogic.gdx.graphics.g2d.Animation<com.badlogic.gdx.graphics.g2d.TextureRegion> portalIdleAnim, portalStartAnim;
+    private com.badlogic.gdx.graphics.g2d.Animation<com.badlogic.gdx.graphics.g2d.TextureRegion> explosionAnim;
+
+    private java.util.List<Effect> effects = new java.util.ArrayList<>();
+
+    private static class Effect {
+        float x, y, stateTime = 0;
+        com.badlogic.gdx.graphics.g2d.Animation<com.badlogic.gdx.graphics.g2d.TextureRegion> anim;
+        String text;
+        com.badlogic.gdx.graphics.Color color;
+        boolean isDead = false;
+
+        Effect(float x, float y, com.badlogic.gdx.graphics.g2d.Animation<com.badlogic.gdx.graphics.g2d.TextureRegion> anim) {
+            this.x = x; this.y = y; this.anim = anim;
+        }
+        Effect(float x, float y, String text, com.badlogic.gdx.graphics.Color color) {
+            this.x = x; this.y = y; this.text = text; this.color = color;
+        }
+        void update(float delta) {
+            stateTime += delta;
+            if (anim != null && anim.isAnimationFinished(stateTime)) isDead = true;
+            if (text != null) {
+                y += 30 * delta;
+                if (stateTime > 0.8f) isDead = true;
+            }
+        }
+    }
 
     // Sprite & Weapon Textures
     private com.badlogic.gdx.graphics.Texture smallBulletTex;
@@ -77,6 +103,8 @@ public class GameScreen extends ScreenAdapter {
     private com.badlogic.gdx.graphics.Texture smgTex;
     private com.badlogic.gdx.graphics.Texture rocketLauncherTex;
     private com.badlogic.gdx.graphics.Texture healthOrbTex;
+    private com.badlogic.gdx.graphics.Texture barBack, barHP, barEnergy, barHP_red;
+    private com.badlogic.gdx.graphics.g2d.TextureRegion barrelRegion;
 
     private java.util.List<com.badlogic.gdx.graphics.Texture> loadedTextures = new java.util.ArrayList<>();
     private String localActiveWeaponId = "starter_pistol";
@@ -118,7 +146,10 @@ public class GameScreen extends ScreenAdapter {
             loadedTextures.add(tex);
             com.badlogic.gdx.graphics.g2d.TextureRegion[][] tmp = com.badlogic.gdx.graphics.g2d.TextureRegion.split(tex, frameW, frameH);
             com.badlogic.gdx.utils.Array<com.badlogic.gdx.graphics.g2d.TextureRegion> frames = new com.badlogic.gdx.utils.Array<>();
-            for (int i = 0; i < tmp.length; i++) {
+            
+            // For the boss or any multi-row sheet, let's just take the first row to avoid flickering
+            int rowsToUse = (path.contains("boss")) ? 1 : tmp.length;
+            for (int i = 0; i < rowsToUse; i++) {
                 for (int j = 0; j < tmp[i].length; j++) {
                     frames.add(tmp[i][j]);
                 }
@@ -134,8 +165,17 @@ public class GameScreen extends ScreenAdapter {
         this.game = game;
         this.shapeRenderer = new ShapeRenderer();
         this.spriteBatch = new SpriteBatch();
-        this.font = new BitmapFont();
-        this.font.getData().setScale(0.8f);
+        
+        // Initialize custom font
+        FreeTypeFontGenerator gen = new FreeTypeFontGenerator(Gdx.files.internal("fonts/InkSlime.ttf"));
+        FreeTypeFontGenerator.FreeTypeFontParameter param = new FreeTypeFontGenerator.FreeTypeFontParameter();
+        param.size = 18;
+        param.color = Color.WHITE;
+        param.borderWidth = 1f;
+        param.borderColor = Color.BLACK;
+        this.font = gen.generateFont(param);
+        gen.dispose();
+
         this.viewport = new ExtendViewport(640, 480);
         this.dungeonRenderer = new DungeonRenderer(shapeRenderer);
 
@@ -146,7 +186,18 @@ public class GameScreen extends ScreenAdapter {
             revolverTex = new com.badlogic.gdx.graphics.Texture(Gdx.files.internal("sprites/weapons/revolver.png"));
             smgTex = new com.badlogic.gdx.graphics.Texture(Gdx.files.internal("sprites/weapons/smg.png"));
             rocketLauncherTex = new com.badlogic.gdx.graphics.Texture(Gdx.files.internal("sprites/weapons/rocketlauncher.png"));
-            healthOrbTex = new com.badlogic.gdx.graphics.Texture(Gdx.files.internal("sprites/boss/boss_orb.png"));
+            healthOrbTex = new com.badlogic.gdx.graphics.Texture(Gdx.files.internal("sprites/pickups/health.png"));
+            
+            // Load wooden crate from tileset
+            com.badlogic.gdx.graphics.Texture tileset = new com.badlogic.gdx.graphics.Texture(Gdx.files.internal("textures/tileset.png"));
+            loadedTextures.add(tileset);
+            com.badlogic.gdx.graphics.g2d.TextureRegion[][] tiles = com.badlogic.gdx.graphics.g2d.TextureRegion.split(tileset, 16, 16);
+            barrelRegion = tiles[2][0]; // Wooden Box
+
+            barBack = new com.badlogic.gdx.graphics.Texture(Gdx.files.internal("textures/hud/HPBar_back.png"));
+            barHP = new com.badlogic.gdx.graphics.Texture(Gdx.files.internal("textures/hud/HPBar_green.png"));
+            barHP_red = new com.badlogic.gdx.graphics.Texture(Gdx.files.internal("textures/hud/HPBar_red.png"));
+            barEnergy = new com.badlogic.gdx.graphics.Texture(Gdx.files.internal("textures/hud/HPBar_yellow.png"));
 
             p1IdleAnim = createAnim("sprites/player1/Idle1.png.png", 16, 16, 0.15f, com.badlogic.gdx.graphics.g2d.Animation.PlayMode.LOOP);
             p1RunAnim = createAnim("sprites/player1/Run1.png.png", 16, 16, 0.1f, com.badlogic.gdx.graphics.g2d.Animation.PlayMode.LOOP);
@@ -166,8 +217,12 @@ public class GameScreen extends ScreenAdapter {
             vampAttackAnim = createAnim("sprites/enemy2/vampire_attack.png", 32, 32, 0.1f, com.badlogic.gdx.graphics.g2d.Animation.PlayMode.LOOP);
             vampDeathAnim = createAnim("sprites/enemy2/vampire_death.png", 32, 32, 0.1f, com.badlogic.gdx.graphics.g2d.Animation.PlayMode.NORMAL);
 
-            bossIdleAnim = createAnim("sprites/boss/boss_idle.png", 208, 340, 0.2f, com.badlogic.gdx.graphics.g2d.Animation.PlayMode.LOOP);
-            bossHitAnim = createAnim("sprites/boss/boss_hit.png", 208, 340, 0.15f, com.badlogic.gdx.graphics.g2d.Animation.PlayMode.NORMAL);
+            bossIdleAnim = createAnim("sprites/boss/boss_idle.png", 416, 340, 0.2f, com.badlogic.gdx.graphics.g2d.Animation.PlayMode.LOOP);
+            bossHitAnim = createAnim("sprites/boss/boss_hit.png", 416, 340, 0.15f, com.badlogic.gdx.graphics.g2d.Animation.PlayMode.NORMAL);
+
+            portalIdleAnim = createAnim("sprites/portals/Portal1_Idle.png", 96, 96, 0.1f, com.badlogic.gdx.graphics.g2d.Animation.PlayMode.LOOP);
+            portalStartAnim = createAnim("sprites/portals/Portal1_Start.png", 96, 96, 0.1f, com.badlogic.gdx.graphics.g2d.Animation.PlayMode.NORMAL);
+            explosionAnim = createAnim("sprites/projectile/rocket-explosion.png", 48, 48, 0.08f, com.badlogic.gdx.graphics.g2d.Animation.PlayMode.NORMAL);
         } catch (Exception e) {
             e.printStackTrace();
         }
@@ -190,13 +245,9 @@ public class GameScreen extends ScreenAdapter {
         Table table = new Table();
         table.top().left();
         table.setFillParent(true);
-        healthLabel = new Label("HP: 100/100", skin);
-        energyLabel = new Label("Energy: 200/200", skin);
         weaponLabel = new Label("Weapon: Starter Pistol", skin);
         
-        table.add(healthLabel).pad(10).left().row();
-        table.add(energyLabel).pad(10).left().row();
-        table.add(weaponLabel).pad(10).left().expandX();
+        table.add(weaponLabel).pad(10).padTop(60).left().expandX();
         hudStage.addActor(table);
 
         // Downed Table
@@ -230,7 +281,6 @@ public class GameScreen extends ScreenAdapter {
         resultLabel = new Label("", skin);
         resultLabel.setFontScale(1.2f);
         resultLabel.setColor(Color.GOLD);
-        resultLabel.setPosition(Gdx.graphics.getWidth()/2f - 100, Gdx.graphics.getHeight() - 100);
         resultLabel.setVisible(false);
         hudStage.addActor(resultLabel);
 
@@ -238,16 +288,26 @@ public class GameScreen extends ScreenAdapter {
         Gdx.input.setInputProcessor(hudStage);
 
         game.networkManager.setOnDisconnect(() -> Gdx.app.postRunnable(() -> game.setScreen(new MenuScreen(game))));
+        
+        // Register UDP with server
+        game.networkManager.sendUDP(new HelloPacket(game.networkManager.getPlayerId()));
 
         game.networkManager.setPacketListener(packet -> {
             if (packet instanceof MapDataPacket mapPacket) {
                 this.map = new DungeonMap(mapPacket.width, mapPacket.height);
                 this.map.tiles = mapPacket.tiles;
             } else if (packet instanceof EntityRemovePacket remove) {
-                entities.remove(remove.entityId);
+                EntityState removed = entities.remove(remove.entityId);
+                if (removed != null && "rocket".equals(removed.templateId)) {
+                    synchronized(effects) { effects.add(new Effect(removed.x, removed.y, explosionAnim)); }
+                }
                 if (remove.entityId >= 1000) {
                     synchronized (removedIds) { removedIds.add(remove.entityId); }
                 }
+            } else if (packet instanceof BulletSpawnPacket bullet) {
+                EntityState es = new EntityState(bullet.x, bullet.y);
+                es.templateId = bullet.type;
+                entities.put(bullet.entityId, es);
             } else if (packet instanceof GameOverPacket gameOver) {
                 Gdx.app.postRunnable(() -> game.setScreen(new EndGameScreen(game, "GAME OVER!\nAll players have died.")));
             } else if (packet instanceof PlayerUpdatePacket update) {
@@ -292,15 +352,21 @@ public class GameScreen extends ScreenAdapter {
                     maxHP = res.maxHp;
                     currentEnergy = res.energy;
                     maxEnergy = res.maxEnergy;
-                    Gdx.app.postRunnable(() -> {
-                        healthLabel.setText("HP: " + (int)currentHP + "/" + (int)maxHP);
-                        energyLabel.setText("Energy: " + (int)currentEnergy + "/" + (int)maxEnergy);
-                    });
                 }
                 
                 // Track HP for all entities for debug HUD
                 EntityState es = entities.get(res.playerId);
                 if (es != null) {
+                    if (es.hp >= 0 && res.hp < es.hp) {
+                        float damage = es.hp - res.hp;
+                        // Skip damage numbers for crates (Id range 3000-4000)
+                        if (res.playerId < 3000 || res.playerId >= 4000) {
+                            synchronized(effects) {
+                                Color dmgColor = (res.playerId < 10) ? (res.playerId == game.networkManager.getPlayerId() ? Color.RED : Color.WHITE) : Color.YELLOW;
+                                effects.add(new Effect(es.x, es.y + 10, "-" + (int)damage, dmgColor));
+                            }
+                        }
+                    }
                     es.hp = res.hp;
                     es.maxHp = res.maxHp;
                     es.reviveProgress = res.reviveProgress;
@@ -310,17 +376,18 @@ public class GameScreen extends ScreenAdapter {
                     String active = wchange.activeSlot == 0 ? wchange.slot0 : wchange.slot1;
                     if (wchange.playerId == game.networkManager.getPlayerId()) {
                         localActiveWeaponId = active;
-                        Gdx.app.postRunnable(() -> weaponLabel.setText("Weapon: " + active));
+                        Gdx.app.postRunnable(() -> {
+                            com.project137.io.ecs.data.WeaponTemplate wt = DataManager.getWeapon(active);
+                            weaponLabel.setText("Weapon: " + (wt != null ? wt.name : "Unknown"));
+                        });
                     }
-                    EntityState esWeapon = entities.get(wchange.playerId);
-                    if (esWeapon != null) esWeapon.activeWeaponId = active;
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }
-            } else if (packet instanceof ItemSpawnPacket item) {
-                EntityState es = new EntityState(item.x, item.y);
-                es.templateId = item.templateId;
-                entities.put(item.entityId, es);
+                    EntityState es = entities.get(wchange.playerId);
+                    if (es != null) es.activeWeaponId = active;
+                } catch (Exception e) {}
+            } else if (packet instanceof ItemSpawnPacket is) {
+                EntityState es = new EntityState(is.x, is.y);
+                es.templateId = is.templateId;
+                entities.put(is.entityId, es);
             } else if (packet instanceof TileUpdatePacket tileUpdate) {
                 if (this.map != null) this.map.tiles[tileUpdate.x][tileUpdate.y] = tileUpdate.tile;
             } else if (packet instanceof RoomProgressPacket prog) {
@@ -347,12 +414,11 @@ public class GameScreen extends ScreenAdapter {
         viewport.getCamera().update();
 
         viewport.apply();
-        shapeRenderer.setProjectionMatrix(viewport.getCamera().combined);
-        
-        if (map != null) dungeonRenderer.render(map);
-
-        // Render Textured Sprites using SpriteBatch first
         spriteBatch.setProjectionMatrix(viewport.getCamera().combined);
+        
+        if (map != null) dungeonRenderer.render(map, spriteBatch);
+
+        // Render Textured Sprites
         spriteBatch.begin();
         for (Integer id : entities.keySet()) {
             EntityState es = entities.get(id);
@@ -407,13 +473,13 @@ public class GameScreen extends ScreenAdapter {
                 }
             } else if (id < 2000) {
                 boolean flipX = MathUtils.cosDeg(es.angle) < 0;
-                if (es.maxHp >= 300) {
+                if ("boss_goblin".equals(es.templateId)) {
                     if (es.hp > 0 && bossIdleAnim != null) {
-                        drawFlipped(bossIdleAnim.getKeyFrame(es.stateTime), es.x - 52, es.y - 40, 104, 170, flipX);
+                        drawFlipped(bossIdleAnim.getKeyFrame(es.stateTime), es.x - 104, es.y - 85, 208, 170, flipX);
                     } else if (es.hp <= 0 && bossHitAnim != null) {
-                        drawFlipped(bossHitAnim.getKeyFrame(es.stateTime), es.x - 52, es.y - 40, 104, 170, flipX);
+                        drawFlipped(bossHitAnim.getKeyFrame(es.stateTime), es.x - 104, es.y - 85, 208, 170, flipX);
                     }
-                } else if (es.maxHp <= 40) {
+                } else if ("slime".equals(es.templateId)) {
                     if (es.hp > 0) {
                         com.badlogic.gdx.graphics.g2d.TextureRegion frame;
                         if (es.isMoving) frame = skelRunAnim != null ? skelRunAnim.getKeyFrame(es.stateTime) : null;
@@ -422,7 +488,7 @@ public class GameScreen extends ScreenAdapter {
                     } else if (skelDeathAnim != null) {
                         drawFlipped(skelDeathAnim.getKeyFrame(es.stateTime), es.x - 32, es.y - 32, 64, 64, flipX);
                     }
-                } else {
+                } else { // goblin or other
                     if (es.hp > 0) {
                         com.badlogic.gdx.graphics.g2d.TextureRegion frame;
                         if (es.isMoving) frame = vampRunAnim != null ? vampRunAnim.getKeyFrame(es.stateTime) : null;
@@ -434,23 +500,46 @@ public class GameScreen extends ScreenAdapter {
                 }
             } else if (id < 3000) {
                 com.badlogic.gdx.graphics.Texture bulletTex = longBulletTex;
+                float bW = 16, bH = 16;
+                
+                if ("rocket".equals(es.templateId)) {
+                    bulletTex = rocketTex;
+                    bW = 24; bH = 24;
+                } else if ("small_bullet".equals(es.templateId)) {
+                    bulletTex = smallBulletTex;
+                    bW = 12; bH = 12;
+                }
+                
                 float bulletAngle = es.angle * MathUtils.radiansToDegrees;
                 if (Math.abs(es.targetX - es.x) > 0.1f || Math.abs(es.targetY - es.y) > 0.1f) {
                     bulletAngle = MathUtils.atan2(es.targetY - es.y, es.targetX - es.x) * MathUtils.radiansToDegrees;
                     es.angle = bulletAngle / MathUtils.radiansToDegrees; // cache the angle
                 }
+                
                 spriteBatch.draw(
                     new com.badlogic.gdx.graphics.g2d.TextureRegion(bulletTex),
-                    es.x - 8, es.y - 8,
-                    8, 8,
-                    16, 16,
+                    es.x - bW/2, es.y - bH/2,
+                    bW/2, bH/2,
+                    bW, bH,
                     1.0f, 1.0f,
                     bulletAngle
                 );
-            } else if (id >= 5000) {
+            } else if (id >= 5000 || (id >= 3000 && id < 4000)) {
                 if ("health_orb".equals(es.templateId)) {
                     spriteBatch.draw(healthOrbTex, es.x - 8, es.y - 8, 16, 16);
-                } else if (!"portal".equals(es.templateId)) {
+                } else if ("portal".equals(es.templateId)) {
+                    com.badlogic.gdx.graphics.g2d.TextureRegion frame;
+                    if (es.stateTime < portalStartAnim.getAnimationDuration()) {
+                        frame = portalStartAnim.getKeyFrame(es.stateTime);
+                    } else {
+                        frame = portalIdleAnim.getKeyFrame(es.stateTime);
+                    }
+                    spriteBatch.draw(frame, es.x - 32, es.y - 32, 64, 64);
+                } else if ("crate".equals(es.templateId) || (id >= 3000 && id < 4000)) {
+                    if (barrelRegion != null) {
+                        spriteBatch.draw(barrelRegion, es.x - 8, es.y - 8, 16, 16);
+                    }
+                } else {
                     com.badlogic.gdx.graphics.Texture itemTex = revolverTex;
                     if ("fast_smg".equals(es.templateId)) itemTex = smgTex;
                     else if ("heavy_cannon".equals(es.templateId)) itemTex = rocketLauncherTex;
@@ -460,6 +549,24 @@ public class GameScreen extends ScreenAdapter {
                 }
             }
         }
+
+        // Draw active effects
+        synchronized(effects) {
+            java.util.Iterator<Effect> it = effects.iterator();
+            while (it.hasNext()) {
+                Effect e = it.next();
+                e.update(delta);
+                if (e.isDead) { it.remove(); continue; }
+                
+                if (e.anim != null) {
+                    spriteBatch.draw(e.anim.getKeyFrame(e.stateTime), e.x - 24, e.y - 24, 48, 48);
+                } else if (e.text != null) {
+                    font.setColor(e.color);
+                    font.draw(spriteBatch, e.text, e.x - 10, e.y);
+                }
+            }
+        }
+
         spriteBatch.end();
 
         // Render Geometry & Overlays using ShapeRenderer
@@ -469,16 +576,9 @@ public class GameScreen extends ScreenAdapter {
             EntityState es = entities.get(id);
             
             if (id >= 3000 && id < 4000) {
-                // Crates
-                shapeRenderer.setColor(Color.BROWN);
-                shapeRenderer.rect(es.x - 7, es.y - 7, 14, 14);
+                // Crates are now handled in DungeonRenderer with SpriteBatch
             } else if (id >= 5000 && "portal".equals(es.templateId)) {
-                // The portal remains a glowing geometric shape
-                float pulse = 16 + 8 * (float)Math.sin(com.badlogic.gdx.utils.TimeUtils.nanoTime() / 150000000.0);
-                shapeRenderer.setColor(Color.GREEN);
-                shapeRenderer.circle(es.x, es.y, pulse);
-                shapeRenderer.setColor(Color.CYAN);
-                shapeRenderer.circle(es.x, es.y, pulse * 0.6f);
+                // Portal is now handled in SpriteBatch
             }
 
             // Render Revive Progress Bar
@@ -515,7 +615,7 @@ public class GameScreen extends ScreenAdapter {
             spriteBatch.end();
         }
         
-        shapeRenderer.setProjectionMatrix(new com.badlogic.gdx.math.Matrix4().setToOrtho2D(0, 0, Gdx.graphics.getWidth(), Gdx.graphics.getHeight()));
+        shapeRenderer.setProjectionMatrix(new com.badlogic.gdx.math.Matrix4().setToOrtho2D(0, 0, hudStage.getViewport().getWorldWidth(), hudStage.getViewport().getWorldHeight()));
         java.util.List<Vector2> otherPlayers = new java.util.ArrayList<>();
         for (Integer id : entities.keySet()) {
             if (id != game.networkManager.getPlayerId() && id < 10) {
@@ -523,8 +623,26 @@ public class GameScreen extends ScreenAdapter {
                 otherPlayers.add(new Vector2(es.x, es.y));
             }
         }
-        dungeonRenderer.renderMinimap(map, localX, localY, otherPlayers, clearedRooms, totalRooms);
+        dungeonRenderer.renderMinimap(map, localX, localY, otherPlayers, clearedRooms, totalRooms, hudStage.getViewport().getWorldWidth(), hudStage.getViewport().getWorldHeight());
         
+        // Render Graphical HUD
+        spriteBatch.setProjectionMatrix(hudStage.getViewport().getCamera().combined);
+        spriteBatch.begin();
+        float hudX = 20, hudY = hudStage.getViewport().getWorldHeight() - 40;
+        float barW = 160, barH = 22;
+        
+        // HP Bar
+        spriteBatch.draw(barBack, hudX, hudY, barW, barH);
+        float hpRatio = Math.max(0, currentHP / maxHP);
+        spriteBatch.draw(hpRatio < 0.25f ? barHP_red : barHP, hudX + 2, hudY + 2, (barW - 4) * hpRatio, barH - 4);
+        
+        // Energy Bar
+        hudY -= 25;
+        spriteBatch.draw(barBack, hudX, hudY, barW, barH);
+        float energyRatio = Math.max(0, currentEnergy / maxEnergy);
+        spriteBatch.draw(barEnergy, hudX + 2, hudY + 2, (barW - 4) * energyRatio, barH - 4);
+        spriteBatch.end();
+
         hudStage.act(delta);
         hudStage.draw();
     }
@@ -658,6 +776,8 @@ public class GameScreen extends ScreenAdapter {
     private void showVoteResult(String winner) {
         voteTable.setVisible(false); // Hide the buff choosing/waiting panel
         resultLabel.setText("BUFF APPLIED: " + winner);
+        resultLabel.pack(); // Size to text
+        resultLabel.setPosition(hudStage.getViewport().getWorldWidth()/2f - resultLabel.getWidth()/2f, hudStage.getViewport().getWorldHeight() - 100);
         resultLabel.setVisible(true);
         com.badlogic.gdx.utils.Timer.schedule(new com.badlogic.gdx.utils.Timer.Task() {
             @Override
@@ -680,6 +800,7 @@ public class GameScreen extends ScreenAdapter {
         font.dispose();
         hudStage.dispose();
         skin.dispose();
+        if (dungeonRenderer != null) dungeonRenderer.dispose();
 
         // Dispose textures
         for (com.badlogic.gdx.graphics.Texture tex : loadedTextures) {
@@ -692,5 +813,9 @@ public class GameScreen extends ScreenAdapter {
         if (smgTex != null) smgTex.dispose();
         if (rocketLauncherTex != null) rocketLauncherTex.dispose();
         if (healthOrbTex != null) healthOrbTex.dispose();
+        if (barBack != null) barBack.dispose();
+        if (barHP != null) barHP.dispose();
+        if (barHP_red != null) barHP_red.dispose();
+        if (barEnergy != null) barEnergy.dispose();
     }
 }

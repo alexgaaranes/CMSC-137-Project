@@ -1,49 +1,74 @@
 package com.project137.io.world;
 
+import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.graphics.Color;
+import com.badlogic.gdx.graphics.Texture;
+import com.badlogic.gdx.graphics.g2d.SpriteBatch;
+import com.badlogic.gdx.graphics.g2d.TextureRegion;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.math.Vector2;
 import java.util.List;
 
 public class DungeonRenderer {
     private final ShapeRenderer shapeRenderer;
+    private final Texture tileset;
+    private final TextureRegion wall, gate, crate;
+    private final TextureRegion[] floorVariants;
 
     public DungeonRenderer(ShapeRenderer shapeRenderer) {
         this.shapeRenderer = shapeRenderer;
+        this.tileset = new Texture(Gdx.files.internal("textures/tileset.png"));
+        TextureRegion[][] tmp = TextureRegion.split(tileset, 16, 16);
+        
+        // Single tile wall as requested [0][1]
+        this.wall = tmp[0][1];
+        
+        // Improved grey floor variants
+        this.floorVariants = new TextureRegion[] {
+            tmp[10][10], // Smooth Grey
+            tmp[10][11], // Slightly Cracked
+            tmp[11][10]  // Rough
+        };
+        
+        this.crate = tmp[2][0]; // Wooden Box
+        this.gate = tmp[6][1];  // Wooden Gate
     }
 
-    public void render(DungeonMap map) {
+    public void render(DungeonMap map, SpriteBatch batch) {
         if (map == null) return;
         
-        shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
+        batch.begin();
         for (int x = 0; x < map.width; x++) {
             for (int y = 0; y < map.height; y++) {
                 int tile = map.tiles[x][y];
+                TextureRegion region = null;
+                
                 if (tile == DungeonMap.TILE_WALL) {
-                    shapeRenderer.setColor(Color.DARK_GRAY);
-                    shapeRenderer.rect(x * 16, y * 16, 16, 16);
+                    region = wall;
                 } else if (tile == DungeonMap.TILE_FLOOR) {
-                    shapeRenderer.setColor(Color.LIGHT_GRAY);
-                    shapeRenderer.rect(x * 16, y * 16, 16, 16);
+                    int variant = (x * 31 + y * 17) % 100;
+                    region = variant < 80 ? floorVariants[0] : (variant < 90 ? floorVariants[1] : floorVariants[2]);
                 } else if (tile == DungeonMap.TILE_GATE) {
-                    shapeRenderer.setColor(Color.MAROON);
-                    shapeRenderer.rect(x * 16, y * 16, 16, 16);
+                    region = gate;
                 } else if (tile == DungeonMap.TILE_CRATE) {
-                    shapeRenderer.setColor(Color.BROWN);
-                    shapeRenderer.rect(x * 16 + 1, y * 16 + 1, 14, 14);
+                    region = crate;
+                }
+                
+                if (region != null) {
+                    batch.draw(region, x * 16, y * 16, 16, 16);
                 }
             }
         }
-        shapeRenderer.end();
+        batch.end();
     }
 
-    public void renderMinimap(DungeonMap map, float localX, float localY, List<Vector2> otherPlayers, int clearedRooms, int totalRooms) {
+    public void renderMinimap(DungeonMap map, float localX, float localY, List<Vector2> otherPlayers, int clearedRooms, int totalRooms, float viewportW, float viewportH) {
         if (map == null) return;
 
         int px = (int)(localX / 16);
         int py = (int)(localY / 16);
         
-        // Fog of War (slightly larger reveal radius)
+        // Fog of War
         for (int dx = -8; dx <= 8; dx++) {
             for (int dy = -8; dy <= 8; dy++) {
                 int nx = px + dx;
@@ -54,10 +79,11 @@ public class DungeonRenderer {
             }
         }
 
-        float tileSize = 2.5f; // Scaled down for more coverage
-        int viewRadius = 30; // Doubled coverage (60x60 tiles view)
+        float tileSize = 2.5f;
+        int viewRadius = 30;
         float minimapSize = viewRadius * 2 * tileSize;
-        float offsetX = 10, offsetY = 480 - minimapSize - 10;
+        // Position at top right based on provided viewport dimensions
+        float offsetX = viewportW - minimapSize - 10, offsetY = viewportH - minimapSize - 10;
 
         shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
         
@@ -72,8 +98,9 @@ public class DungeonRenderer {
                 
                 if (tx >= 0 && tx < map.width && ty >= 0 && ty < map.height && map.explored[tx][ty]) {
                     int tile = map.tiles[tx][ty];
-                    if (tile == DungeonMap.TILE_WALL || tile == DungeonMap.TILE_GATE) shapeRenderer.setColor(Color.WHITE);
-                    else if (tile == DungeonMap.TILE_FLOOR) shapeRenderer.setColor(0.2f, 0.4f, 0.8f, 1f); // Darker blue floor
+                    if (tile == DungeonMap.TILE_WALL) shapeRenderer.setColor(Color.GRAY);
+                    else if (tile == DungeonMap.TILE_GATE) shapeRenderer.setColor(Color.GOLD);
+                    else if (tile == DungeonMap.TILE_FLOOR) shapeRenderer.setColor(0.15f, 0.15f, 0.15f, 1f);
                     else if (tile == DungeonMap.TILE_CRATE) shapeRenderer.setColor(Color.BROWN);
                     else continue;
                     
@@ -108,7 +135,7 @@ public class DungeonRenderer {
         shapeRenderer.rect(offsetX, offsetY, minimapSize, minimapSize);
         shapeRenderer.end();
 
-        // Draw Clockwise Progress Bar around the minimap square border
+        // Draw Clockwise Progress Bar
         if (totalRooms > 0) {
             float ratio = Math.min(1.0f, (float)clearedRooms / totalRooms);
             float totalLen = minimapSize * 4;
@@ -162,5 +189,9 @@ public class DungeonRenderer {
             
             shapeRenderer.end();
         }
+    }
+
+    public void dispose() {
+        if (tileset != null) tileset.dispose();
     }
 }

@@ -7,14 +7,16 @@ import java.io.IOException;
 public class BulletSpawnPacket implements Packet {
     public int entityId;
     public float x, y, vx, vy;
+    public String type; // "bullet", "rocket"
 
     public BulletSpawnPacket() {}
-    public BulletSpawnPacket(int entityId, float x, float y, float vx, float vy) {
+    public BulletSpawnPacket(int entityId, float x, float y, float vx, float vy, String type) {
         this.entityId = entityId;
         this.x = x;
         this.y = y;
         this.vx = vx;
         this.vy = vy;
+        this.type = type;
     }
 
     @Override
@@ -24,6 +26,7 @@ public class BulletSpawnPacket implements Packet {
         out.writeFloat(y);
         out.writeFloat(vx);
         out.writeFloat(vy);
+        out.writeUTF(type != null ? type : "bullet");
     }
 
     @Override
@@ -33,6 +36,7 @@ public class BulletSpawnPacket implements Packet {
         y = in.readFloat();
         vx = in.readFloat();
         vy = in.readFloat();
+        type = in.readUTF();
     }
 
     @Override

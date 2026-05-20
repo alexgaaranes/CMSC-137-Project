@@ -3,6 +3,7 @@ package com.project137.io.network;
 import com.project137.io.NetworkConfig;
 import java.io.*;
 import java.net.*;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.function.Consumer;
 
 public class ClientNetworkManager {
@@ -15,14 +16,28 @@ public class ClientNetworkManager {
     private boolean threadsStarted = false;
     private Consumer<Packet> packetListener;
     private Runnable onDisconnect;
+    private final ConcurrentLinkedQueue<Packet> packetBuffer = new ConcurrentLinkedQueue<>();
 
     public void setPacketListener(Consumer<Packet> listener) {
         this.packetListener = listener;
-        if (listener != null && running && !threadsStarted) {
-            threadsStarted = true;
-            Thread.ofVirtual().name("Client-TCP").start(this::listenTCP);
-            Thread.ofVirtual().name("Client-UDP").start(this::listenUDP);
+        if (listener != null) {
+            // Process buffered packets
+            Packet p;
+            while ((p = packetBuffer.poll()) != null) {
+                listener.accept(p);
+            }
+            
+            if (running && !threadsStarted) {
+                startThreads();
+            }
         }
+    }
+
+    private void startThreads() {
+        if (threadsStarted) return;
+        threadsStarted = true;
+        Thread.ofVirtual().name("Client-TCP").start(this::listenTCP);
+        Thread.ofVirtual().name("Client-UDP").start(this::listenUDP);
     }
 
     public void setOnDisconnect(Runnable callback) {
@@ -30,12 +45,18 @@ public class ClientNetworkManager {
     }
 
     public void connect(String ip) throws IOException {
-        tcpSocket = new Socket(ip, NetworkConfig.PORT);
+        disconnect(); // Ensure clean state
+        tcpSocket = new Socket();
+        tcpSocket.connect(new InetSocketAddress(ip, NetworkConfig.PORT), 5000);
         tcpIn = new DataInputStream(tcpSocket.getInputStream());
         tcpOut = new DataOutputStream(tcpSocket.getOutputStream());
         udpSocket = new DatagramSocket();
         running = true;
         threadsStarted = false;
+        
+        if (packetListener != null) {
+            startThreads();
+        }
     }
 
     private void listenTCP() {
@@ -110,8 +131,12 @@ public class ClientNetworkManager {
                     }
                 }
                 
-                if (packet != null && packetListener != null) {
-                    packetListener.accept(packet);
+                if (packet != null) {
+                    if (packetListener != null) {
+                        packetListener.accept(packet);
+                    } else {
+                        packetBuffer.add(packet);
+                    }
                 }
             }
         } catch (IOException e) {
@@ -146,7 +171,11 @@ public class ClientNetworkManager {
 
                 if (udpPacket != null) {
                     udpPacket.read(dis);
-                    if (packetListener != null) packetListener.accept(udpPacket);
+                    if (packetListener != null) {
+                        packetListener.accept(udpPacket);
+                    } else {
+                        packetBuffer.add(udpPacket);
+                    }
                 }
             } catch (IOException e) {
                 if (running) handleDisconnect();
@@ -184,11 +213,14 @@ public class ClientNetworkManager {
 
     public void disconnect() {
         running = false;
+        threadsStarted = false;
+        packetListener = null;
+        packetBuffer.clear();
         try {
             if (tcpSocket != null) tcpSocket.close();
             if (udpSocket != null) udpSocket.close();
         } catch (IOException e) {
-            e.printStackTrace();
+            // ignore
         }
     }
 
