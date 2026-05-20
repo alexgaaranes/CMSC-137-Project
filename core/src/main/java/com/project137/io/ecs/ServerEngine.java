@@ -50,6 +50,12 @@ public class ServerEngine {
     private final List<Entity> removalQueue = new ArrayList<>();
     private final List<Body> wallBodies = new ArrayList<>();
     private final List<Body> gateBodies = new ArrayList<>();
+    private final List<Body> bossGateBodies = new ArrayList<>();
+    private DungeonGenerator.Room bossRoom = null;
+    private boolean bossRoomOpened = false;
+    private boolean portalSpawned = false;
+    private float portalX = 0;
+    private float portalY = 0;
     private final List<Body> bodiesToRemove = new ArrayList<>();
     private final java.util.concurrent.ConcurrentLinkedQueue<Runnable> mainThreadTasks = new java.util.concurrent.ConcurrentLinkedQueue<>();
     private boolean gameOver = false;
@@ -80,6 +86,11 @@ public class ServerEngine {
     private void createPhysicsObjects() {
         for (Body b : wallBodies) bodiesToRemove.add(b);
         wallBodies.clear();
+        for (Body b : bossGateBodies) bodiesToRemove.add(b);
+        bossGateBodies.clear();
+        bossRoomOpened = false;
+        bossRoom = null;
+
         for (int x = 0; x < map.width; x++) {
             for (int y = 0; y < map.height; y++) {
                 int tile = map.tiles[x][y];
@@ -91,6 +102,108 @@ public class ServerEngine {
                 }
             }
         }
+
+        // Lock the boss room from the beginning!
+        for (DungeonGenerator.Room room : generator.rooms) {
+            if (room.type == DungeonGenerator.RoomType.BOSS) {
+                bossRoom = room;
+                for (int x = room.x - 1; x <= room.x + room.w; x++) {
+                    for (int y = room.y - 1; y <= room.y + room.h; y++) {
+                        if (x == room.x - 1 || x == room.x + room.w || y == room.y - 1 || y == room.y + room.h) {
+                            if (map.tiles[x][y] == DungeonMap.TILE_FLOOR) {
+                                spawnBossGate(x, y);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private void spawnBossGate(int tx, int ty) {
+        BodyDef bodyDef = new BodyDef();
+        bodyDef.type = BodyDef.BodyType.StaticBody;
+        bodyDef.position.set((tx * 16 + 8) / NetworkConfig.PPM, (ty * 16 + 8) / NetworkConfig.PPM);
+        Body body = world.createBody(bodyDef);
+        PolygonShape box = new PolygonShape();
+        box.setAsBox(8 / NetworkConfig.PPM, 8 / NetworkConfig.PPM);
+        FixtureDef fdef = new FixtureDef();
+        fdef.shape = box;
+        fdef.filter.categoryBits = BIT_WALL;
+        body.createFixture(fdef);
+        box.dispose();
+        bossGateBodies.add(body);
+        map.tiles[tx][ty] = DungeonMap.TILE_GATE;
+    }
+
+    private void openBossRoom() {
+        if (bossRoom == null || bossRoomOpened) return;
+        bossRoomOpened = true;
+        System.out.println("[Progression] ALL ROOMS EXPLORED! Opening the BOSS room!");
+
+        // Remove the boss gates
+        for (Body body : bossGateBodies) {
+            int tx = (int)(body.getPosition().x * NetworkConfig.PPM / 16);
+            int ty = (int)(body.getPosition().y * NetworkConfig.PPM / 16);
+            map.tiles[tx][ty] = DungeonMap.TILE_FLOOR;
+            networkManager.broadcastTCP(new TileUpdatePacket(tx, ty, DungeonMap.TILE_FLOOR));
+            bodiesToRemove.add(body);
+        }
+        bossGateBodies.clear();
+
+        // Spawn the Boss Goblin
+        int tx = bossRoom.centerX();
+        int ty = bossRoom.centerY();
+        
+        int id = nextEnemyId.getAndIncrement();
+        Entity entity = new Entity();
+        NetworkComponent net = new NetworkComponent();
+        net.id = id;
+        entity.add(net);
+        
+        EnemyComponent enemy = new EnemyComponent();
+        enemy.detectRange = 1000f; 
+        enemy.speed = 3.5f; // fast
+        enemy.damage = 25f; // high damage
+        enemy.attackRate = 1.0f;
+        entity.add(enemy);
+        entity.add(new HealthComponent(350f)); // 350 HP!
+        
+        BodyDef bodyDef = new BodyDef();
+        bodyDef.type = BodyDef.BodyType.DynamicBody;
+        bodyDef.position.set((tx * 16 + 8) / NetworkConfig.PPM, (ty * 16 + 8) / NetworkConfig.PPM);
+        bodyDef.fixedRotation = true;
+        Body body = world.createBody(bodyDef);
+        CircleShape circle = new CircleShape();
+        circle.setRadius(24f / NetworkConfig.PPM); // larger radius
+        FixtureDef fdef = new FixtureDef();
+        fdef.shape = circle;
+        fdef.density = 5f;
+        fdef.filter.categoryBits = BIT_ENEMY;
+        fdef.filter.maskBits = (short)(BIT_WALL | BIT_PLAYER | BIT_PROJECTILE | BIT_CRATE);
+        body.createFixture(fdef);
+        body.setUserData(entity);
+        circle.dispose();
+        
+        BodyComponent bc = new BodyComponent();
+        bc.body = body;
+        entity.add(bc);
+        engine.addEntity(entity);
+        entities.put(id, entity);
+
+        broadcastRoomProgress();
+    }
+
+    private void broadcastRoomProgress() {
+        int totalRooms = 0;
+        int clearedRooms = 0;
+        for (DungeonGenerator.Room r : generator.rooms) {
+            if (r.type == DungeonGenerator.RoomType.ENEMY) {
+                totalRooms++;
+                if (r.cleared) clearedRooms++;
+            }
+        }
+        networkManager.broadcastTCP(new com.project137.io.network.RoomProgressPacket(clearedRooms, totalRooms));
     }
 
     private Body createStaticBox(int tx, int ty, short category, short mask) {
@@ -368,7 +481,7 @@ public class ServerEngine {
                         if (tx >= 0 && tx < map.width && ty >= 0 && ty < map.height) {
                             map.tiles[tx][ty] = DungeonMap.TILE_FLOOR;
                             networkManager.broadcastTCP(new TileUpdatePacket(tx, ty, DungeonMap.TILE_FLOOR));
-                            if (random.nextFloat() < 0.05f) {
+                            if (random.nextFloat() < 0.15f) {
                                 spawnItem("health_orb", tx, ty);
                             }
                         }
@@ -524,23 +637,70 @@ public class ServerEngine {
                 if (!enemiesAlive) {
                     System.out.println("[Progression] Room at (" + room.x + "," + room.y + ") cleared! Opening gates.");
                     unlockRoom(room);
-                    checkLevelCleared();
+                    broadcastRoomProgress();
                 }
             }
         }
+
+        // If a portal has been spawned, check if any alive player walks over it
+        if (portalSpawned) {
+            for (Entity entity : entities.values()) {
+                PlayerComponent pc = entity.getComponent(PlayerComponent.class);
+                if (pc != null && !pc.isDead) {
+                    BodyComponent bc = entity.getComponent(BodyComponent.class);
+                    if (bc != null) {
+                        float dist = bc.body.getPosition().dst(portalX, portalY);
+                        if (dist < 1.2f) { // stepped on portal!
+                            portalSpawned = false;
+                            System.out.println("[Progression] Player stepped into the portal! Starting buff vote...");
+                            startBuffVote();
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        checkLevelCleared();
+    }
+
+    private void spawnPortal() {
+        if (bossRoom == null || portalSpawned) return;
+        int tx = bossRoom.centerX();
+        int ty = bossRoom.centerY();
+        spawnItem("portal", tx, ty);
+        portalSpawned = true;
+        portalX = (tx * 16 + 8) / NetworkConfig.PPM;
+        portalY = (ty * 16 + 8) / NetworkConfig.PPM;
+        System.out.println("[Progression] BOSS DEFEATED! A level transition portal has appeared in the center of the Boss room!");
     }
 
     private void checkLevelCleared() {
-        boolean allCleared = true;
+        if (isVoting) return;
+        boolean allEnemyRoomsCleared = true;
         for (DungeonGenerator.Room room : generator.rooms) {
             if (room.type == DungeonGenerator.RoomType.ENEMY && !room.cleared) {
-                allCleared = false;
+                allEnemyRoomsCleared = false;
                 break;
             }
         }
-        if (allCleared) {
-            System.out.println("[Progression] ALL ROOMS CLEARED! Starting buff vote...");
-            startBuffVote();
+        if (allEnemyRoomsCleared) {
+            if (!bossRoomOpened) {
+                openBossRoom();
+            } else if (!portalSpawned) {
+                boolean bossAlive = false;
+                for (Entity entity : entities.values()) {
+                    if (entity.getComponent(EnemyComponent.class) != null) {
+                        bossAlive = true;
+                        break;
+                    }
+                }
+                if (!bossAlive) {
+                    if (bossRoom != null) bossRoom.cleared = true;
+                    broadcastRoomProgress();
+                    spawnPortal();
+                }
+            }
         }
     }
 
@@ -586,6 +746,7 @@ public class ServerEngine {
     }
 
     private void nextLevel() {
+        portalSpawned = false;
         // Clear old entities (except players)
         for (Integer id : entities.keySet()) {
             if (id >= 10) { 
@@ -603,6 +764,7 @@ public class ServerEngine {
         spawnInitialItems();
         
         networkManager.broadcastTCP(new MapDataPacket(map));
+        broadcastRoomProgress();
         
         DungeonGenerator.Room spawnRoom = generator.rooms.get(0);
         float spawnX = (spawnRoom.centerX() * 16 + 8) / NetworkConfig.PPM;
@@ -875,6 +1037,7 @@ public class ServerEngine {
                 if (hc != null) hc.currentHealth = hc.maxHealth;
             }
         }
+        broadcastRoomProgress();
     }
 
     public DungeonMap getMap() { return map; }

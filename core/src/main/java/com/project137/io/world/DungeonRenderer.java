@@ -37,7 +37,7 @@ public class DungeonRenderer {
         shapeRenderer.end();
     }
 
-    public void renderMinimap(DungeonMap map, float localX, float localY, List<Vector2> otherPlayers) {
+    public void renderMinimap(DungeonMap map, float localX, float localY, List<Vector2> otherPlayers, int clearedRooms, int totalRooms) {
         if (map == null) return;
 
         int px = (int)(localX / 16);
@@ -101,5 +101,66 @@ public class DungeonRenderer {
         }
         
         shapeRenderer.end();
+
+        // Draw the background border of the minimap
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Line);
+        shapeRenderer.setColor(new Color(0.2f, 0.2f, 0.2f, 0.8f));
+        shapeRenderer.rect(offsetX, offsetY, minimapSize, minimapSize);
+        shapeRenderer.end();
+
+        // Draw Clockwise Progress Bar around the minimap square border
+        if (totalRooms > 0) {
+            float ratio = Math.min(1.0f, (float)clearedRooms / totalRooms);
+            float totalLen = minimapSize * 4;
+            float fillLen = totalLen * ratio;
+            
+            Color progressColor = (ratio >= 1.0f) ? Color.YELLOW : Color.CYAN;
+            
+            shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
+            shapeRenderer.setColor(progressColor);
+            
+            float remaining = fillLen;
+            
+            // Segment 1: Middle-Top -> Top-Right
+            float seg1Max = minimapSize / 2;
+            float seg1Len = Math.min(remaining, seg1Max);
+            if (seg1Len > 0) {
+                shapeRenderer.rectLine(offsetX + minimapSize / 2, offsetY + minimapSize, offsetX + minimapSize / 2 + seg1Len, offsetY + minimapSize, 3);
+                remaining -= seg1Len;
+            }
+            
+            // Segment 2: Top-Right -> Bottom-Right
+            float seg2Max = minimapSize;
+            float seg2Len = Math.min(remaining, seg2Max);
+            if (seg2Len > 0) {
+                shapeRenderer.rectLine(offsetX + minimapSize, offsetY + minimapSize, offsetX + minimapSize, offsetY + minimapSize - seg2Len, 3);
+                remaining -= seg2Len;
+            }
+            
+            // Segment 3: Bottom-Right -> Bottom-Left
+            float seg3Max = minimapSize;
+            float seg3Len = Math.min(remaining, seg3Max);
+            if (seg3Len > 0) {
+                shapeRenderer.rectLine(offsetX + minimapSize, offsetY, offsetX + minimapSize - seg3Len, offsetY, 3);
+                remaining -= seg3Len;
+            }
+            
+            // Segment 4: Bottom-Left -> Top-Left
+            float seg4Max = minimapSize;
+            float seg4Len = Math.min(remaining, seg4Max);
+            if (seg4Len > 0) {
+                shapeRenderer.rectLine(offsetX, offsetY, offsetX, offsetY + seg4Len, 3);
+                remaining -= seg4Len;
+            }
+            
+            // Segment 5: Top-Left -> Middle-Top
+            float seg5Max = minimapSize / 2;
+            float seg5Len = Math.min(remaining, seg5Max);
+            if (seg5Len > 0) {
+                shapeRenderer.rectLine(offsetX, offsetY + minimapSize, offsetX + seg5Len, offsetY + minimapSize, 3);
+            }
+            
+            shapeRenderer.end();
+        }
     }
 }

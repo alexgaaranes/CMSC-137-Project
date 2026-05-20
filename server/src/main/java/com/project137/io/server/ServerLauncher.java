@@ -9,7 +9,7 @@ import com.project137.io.network.server.ServerNetworkManager;
 
 /** Launches the server application. */
 public class ServerLauncher {
-    public static void main(String[] args) {
+    public static void main(String[] args) throws IOException {
         ServerNetworkManager networkManager = new ServerNetworkManager();
         networkManager.start();
 

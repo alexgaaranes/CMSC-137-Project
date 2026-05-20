@@ -17,6 +17,7 @@ public class OpCode {
     public static final byte TCP_BUFF_VOTE_RESULT = 14;
     public static final byte TCP_WEAPON_CHANGE = 20;
     public static final byte TCP_ITEM_SPAWN = 21;
+    public static final byte TCP_ROOM_PROGRESS = 22;
     public static final byte TCP_DISCONNECT = 99;
 
     // Unreliable (UDP) Codes
