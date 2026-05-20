@@ -44,7 +44,7 @@ public class MenuScreen extends ScreenAdapter {
 
         skin = new Skin(Gdx.files.internal("ui/uiskin.json"));
         skin.add("default-font", customFont, BitmapFont.class);
-        
+
         // Update styles to use the new font
         Label.LabelStyle ls = skin.get(Label.LabelStyle.class);
         ls.font = customFont;
@@ -59,25 +59,25 @@ public class MenuScreen extends ScreenAdapter {
         table.setFillParent(true);
         stage.addActor(table);
 
-        Label title = new Label("PROJECT-137", skin);
+        Label title = new Label("Socket Knights", skin);
         title.setFontScale(2.0f);
         title.setColor(Color.GOLD);
 
-        
         TextButton hostButton = new TextButton("Host Game", skin);
-        
+
         Label ipLabel = new Label("Enter Host IP:", skin);
         final TextField ipField = new TextField("127.0.0.1", skin);
         ipField.addListener(new com.badlogic.gdx.scenes.scene2d.utils.FocusListener() {
             @Override
-            public void keyboardFocusChanged(com.badlogic.gdx.scenes.scene2d.utils.FocusListener.FocusEvent event, com.badlogic.gdx.scenes.scene2d.Actor actor, boolean focused) {
+            public void keyboardFocusChanged(com.badlogic.gdx.scenes.scene2d.utils.FocusListener.FocusEvent event,
+                    com.badlogic.gdx.scenes.scene2d.Actor actor, boolean focused) {
                 if (focused) {
                     ipField.selectAll();
                 }
             }
         });
         TextButton joinButton = new TextButton("Join Game", skin);
-        
+
         errorLabel = new Label("", skin);
         errorLabel.setColor(com.badlogic.gdx.graphics.Color.RED);
 
@@ -157,11 +157,11 @@ public class MenuScreen extends ScreenAdapter {
     public void render(float delta) {
         Gdx.gl.glClearColor(0, 0, 0, 1);
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT);
-        
+
         game.batch.begin();
         game.batch.draw(background, 0, 0, stage.getViewport().getWorldWidth(), stage.getViewport().getWorldHeight());
         game.batch.end();
-        
+
         stage.act(delta);
         stage.draw();
     }
@@ -170,7 +170,9 @@ public class MenuScreen extends ScreenAdapter {
     public void dispose() {
         stage.dispose();
         skin.dispose();
-        if (background != null) background.dispose();
-        if (customFont != null) customFont.dispose();
+        if (background != null)
+            background.dispose();
+        if (customFont != null)
+            customFont.dispose();
     }
 }

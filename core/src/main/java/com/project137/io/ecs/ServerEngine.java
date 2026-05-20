@@ -938,19 +938,24 @@ public class ServerEngine {
 
     private void handleInteraction(int playerId, InventoryComponent inv, BodyComponent bc) {
         Entity nearestItem = null;
-        float minDist = 1.5f; 
+        float minDist = 3.5f; 
+        System.out.println("[Interaction] Player " + playerId + " triggered interaction! Total entities: " + entities.size());
         for (Entity e : entities.values()) {
             InteractableComponent interact = e.getComponent(InteractableComponent.class);
-            if (interact != null && !"health_orb".equals(interact.templateId)) {
+            if (interact != null && !"health_orb".equals(interact.templateId) && !"portal".equals(interact.templateId)) {
                 BodyComponent itemBc = e.getComponent(BodyComponent.class);
-                float dist = bc.body.getPosition().dst(itemBc.body.getPosition());
-                if (dist < minDist) {
-                    minDist = dist;
-                    nearestItem = e;
+                if (itemBc != null && itemBc.body != null) {
+                    float dist = bc.body.getPosition().dst(itemBc.body.getPosition());
+                    System.out.println("[Interaction] Item: " + interact.templateId + ", Dist: " + dist + " meters (minDist threshold: " + minDist + ")");
+                    if (dist < minDist) {
+                        minDist = dist;
+                        nearestItem = e;
+                    }
                 }
             }
         }
         if (nearestItem != null) {
+            System.out.println("[Interaction] Success! Nearest item: " + nearestItem.getComponent(InteractableComponent.class).templateId);
             InteractableComponent item = nearestItem.getComponent(InteractableComponent.class);
             String oldWeapon = inv.weaponSlots[inv.activeSlot];
             inv.weaponSlots[inv.activeSlot] = item.templateId;

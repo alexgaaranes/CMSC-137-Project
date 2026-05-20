@@ -154,8 +154,9 @@ public class ClientNetworkManager {
                     }
                 }
             }
-        } catch (IOException e) {
-            System.out.println("[Client] TCP connection lost: " + e.getMessage());
+        } catch (Throwable t) {
+            System.out.println("[Client] TCP error: " + t.getMessage());
+            t.printStackTrace();
             handleDisconnect();
         }
     }

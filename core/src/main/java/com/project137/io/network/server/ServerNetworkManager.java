@@ -20,8 +20,13 @@ public class ServerNetworkManager {
 
     public void start() throws IOException {
         running = true;
-        serverSocket = new ServerSocket(NetworkConfig.PORT);
-        udpSocket = new DatagramSocket(NetworkConfig.PORT);
+        serverSocket = new ServerSocket();
+        serverSocket.setReuseAddress(true);
+        serverSocket.bind(new java.net.InetSocketAddress(NetworkConfig.PORT));
+
+        udpSocket = new DatagramSocket(null);
+        udpSocket.setReuseAddress(true);
+        udpSocket.bind(new java.net.InetSocketAddress(NetworkConfig.PORT));
 
         Thread.ofVirtual().name("TCP-Accept").start(this::acceptTCPConnections);
         Thread.ofVirtual().name("UDP-Receive").start(this::receiveUDPPackets);
@@ -107,8 +112,8 @@ public class ServerNetworkManager {
                 } else if (opCode == OpCode.UDP_HELLO) {
                     HelloPacket hello = new HelloPacket();
                     hello.read(client.in);
-                    client.udpAddress = client.tcpSocket.getInetAddress();
-                    client.udpPort = client.tcpSocket.getPort();
+                    // Do not overwrite client.udpAddress/udpPort with TCP socket ports!
+                    // The client's UDP endpoint is correctly registered by receiveUDPPackets().
                 } else if (opCode == OpCode.UDP_INPUT) {
                     InputPacket input = new InputPacket();
                     input.read(client.in);
@@ -162,6 +167,11 @@ public class ServerNetworkManager {
                 } else if (opCode == OpCode.UDP_INPUT) {
                     InputPacket input = new InputPacket();
                     input.read(dis);
+                    ConnectedClient client = clients.get(input.playerId);
+                    if (client != null && (client.udpAddress == null || client.udpPort != packet.getPort())) {
+                        client.udpAddress = packet.getAddress();
+                        client.udpPort = packet.getPort();
+                    }
                     gameEngine.queueInput(input);
                 }
             } catch (IOException e) {
