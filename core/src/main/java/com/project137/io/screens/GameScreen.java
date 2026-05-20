@@ -541,11 +541,34 @@ public class GameScreen extends ScreenAdapter {
                     }
                 } else {
                     com.badlogic.gdx.graphics.Texture itemTex = revolverTex;
-                    if ("fast_smg".equals(es.templateId)) itemTex = smgTex;
-                    else if ("heavy_cannon".equals(es.templateId)) itemTex = rocketLauncherTex;
+                    String displayName = "Starter Pistol";
+                    if ("fast_smg".equals(es.templateId)) {
+                        itemTex = smgTex;
+                        displayName = "Fast SMG";
+                    } else if ("heavy_cannon".equals(es.templateId)) {
+                        itemTex = rocketLauncherTex;
+                        displayName = "Heavy Cannon";
+                    } else if ("revolver".equals(es.templateId)) {
+                        displayName = "Starter Pistol";
+                    }
                     
                     float floatOffset = 3f * (float)Math.sin(com.badlogic.gdx.utils.TimeUtils.nanoTime() / 150000000.0);
                     spriteBatch.draw(itemTex, es.x - 10, es.y - 10 + floatOffset, 20, 20);
+
+                    // Draw Weapon Floating Text Label with Proximity Prompt
+                    float dstToPlayer = com.badlogic.gdx.math.Vector2.dst(localX, localY, es.x, es.y);
+                    if (dstToPlayer < 96f) { // approx 6 tiles radius
+                        font.getData().setScale(0.5f);
+                        if (dstToPlayer < 40f) { // close enough to interact (6.0 meters is ~96px, 40px is very comfortable)
+                            font.setColor(Color.CYAN);
+                            font.draw(spriteBatch, displayName + "\n[E to Equip]", es.x - 100, es.y + 35 + floatOffset, 200, com.badlogic.gdx.utils.Align.center, true);
+                        } else {
+                            font.setColor(Color.WHITE);
+                            font.draw(spriteBatch, displayName, es.x - 100, es.y + 25 + floatOffset, 200, com.badlogic.gdx.utils.Align.center, true);
+                        }
+                        font.getData().setScale(1.0f); // Reset scale
+                        font.setColor(Color.WHITE); // Reset color
+                    }
                 }
             }
         }

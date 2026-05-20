@@ -496,7 +496,10 @@ public class ServerEngine {
                         }
                     }
                 }
-                if (bc != null && bc.body != null) world.destroyBody(bc.body);
+                if (bc != null && bc.body != null) {
+                    world.destroyBody(bc.body);
+                    bc.body = null;
+                }
                 engine.removeEntity(entity);
             }
             removalQueue.clear();
@@ -938,11 +941,13 @@ public class ServerEngine {
 
     private void handleInteraction(int playerId, InventoryComponent inv, BodyComponent bc) {
         Entity nearestItem = null;
-        float minDist = 3.5f; 
+        float minDist = 6.0f; 
         System.out.println("[Interaction] Player " + playerId + " triggered interaction! Total entities: " + entities.size());
         for (Entity e : entities.values()) {
             InteractableComponent interact = e.getComponent(InteractableComponent.class);
-            if (interact != null && !"health_orb".equals(interact.templateId) && !"portal".equals(interact.templateId)) {
+            boolean isRemoved;
+            synchronized (removalQueue) { isRemoved = removalQueue.contains(e); }
+            if (interact != null && !isRemoved && !"health_orb".equals(interact.templateId) && !"portal".equals(interact.templateId)) {
                 BodyComponent itemBc = e.getComponent(BodyComponent.class);
                 if (itemBc != null && itemBc.body != null) {
                     float dist = bc.body.getPosition().dst(itemBc.body.getPosition());
