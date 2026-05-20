@@ -20,13 +20,8 @@ public class ServerNetworkManager {
 
     public void start() throws IOException {
         running = true;
-        serverSocket = new ServerSocket();
-        serverSocket.setReuseAddress(true);
-        serverSocket.bind(new java.net.InetSocketAddress(NetworkConfig.PORT));
-
-        udpSocket = new DatagramSocket(null);
-        udpSocket.setReuseAddress(true);
-        udpSocket.bind(new java.net.InetSocketAddress(NetworkConfig.PORT));
+        serverSocket = new ServerSocket(NetworkConfig.PORT);
+        udpSocket = new DatagramSocket(NetworkConfig.PORT);
 
         Thread.ofVirtual().name("TCP-Accept").start(this::acceptTCPConnections);
         Thread.ofVirtual().name("UDP-Receive").start(this::receiveUDPPackets);
@@ -61,7 +56,7 @@ public class ServerNetworkManager {
 
                 System.out.println("[Server] Client " + id + " connected.");
 
-                gameEngine.postRunnable(() -> gameEngine.addPlayer(id));
+                gameEngine.addPlayer(id);
                 sendTCP(client, new WelcomePacket(id));
                 
                 // Synchronize existing ground items and crates to the new client
@@ -82,13 +77,13 @@ public class ServerNetworkManager {
                         }
                     }
                 }
-                
+
                 // Notify all clients about lobby state
                 broadcastLobbyUpdate();
 
                 Thread.ofVirtual().name("TCP-Client-" + id).start(() -> handleTCPClient(client));
 
-            } catch (Throwable e) {
+            } catch (IOException e) {
                 if (running) e.printStackTrace();
             }
         }
@@ -99,7 +94,6 @@ public class ServerNetworkManager {
             while (running) {
                 byte opCode = client.in.readByte();
                 if (opCode == OpCode.TCP_START_GAME) {
-                    // Only Host (Client ID 1) can start the game
                     if (client.id == 1) {
                         gameEngine.startGame();
                         broadcastTCP(new MapDataPacket(gameEngine.getMap()));
@@ -109,27 +103,14 @@ public class ServerNetworkManager {
                     BuffPackets.BuffVoteSubmitPacket vote = new BuffPackets.BuffVoteSubmitPacket();
                     vote.read(client.in);
                     gameEngine.handleBuffVote(client.id, vote.buffIndex);
-                } else if (opCode == OpCode.UDP_HELLO) {
-                    HelloPacket hello = new HelloPacket();
-                    hello.read(client.in);
-                    // Do not overwrite client.udpAddress/udpPort with TCP socket ports!
-                    // The client's UDP endpoint is correctly registered by receiveUDPPackets().
-                } else if (opCode == OpCode.UDP_INPUT) {
-                    InputPacket input = new InputPacket();
-                    input.read(client.in);
-                    gameEngine.queueInput(input);
                 } else if (opCode == OpCode.TCP_DISCONNECT) {
                     break;
                 }
             }
         } catch (IOException e) {
             System.out.println("[Server] Client " + client.id + " disconnected.");
-        } catch (Throwable t) {
-            System.err.println("[Server] Error handling client " + client.id);
-            t.printStackTrace();
         } finally {
-            final int idToRemove = client.id;
-            gameEngine.postRunnable(() -> gameEngine.removePlayer(idToRemove));
+            gameEngine.removePlayer(client.id);
             clients.remove(client.id);
             broadcastLobbyUpdate();
             client.close();
@@ -167,11 +148,6 @@ public class ServerNetworkManager {
                 } else if (opCode == OpCode.UDP_INPUT) {
                     InputPacket input = new InputPacket();
                     input.read(dis);
-                    ConnectedClient client = clients.get(input.playerId);
-                    if (client != null && (client.udpAddress == null || client.udpPort != packet.getPort())) {
-                        client.udpAddress = packet.getAddress();
-                        client.udpPort = packet.getPort();
-                    }
                     gameEngine.queueInput(input);
                 }
             } catch (IOException e) {
@@ -188,7 +164,7 @@ public class ServerNetworkManager {
                 client.out.flush();
             }
         } catch (IOException e) {
-            e.printStackTrace();
+            // handleDisconnect() logic already in handleTCPClient
         }
     }
 
@@ -206,8 +182,6 @@ public class ServerNetworkManager {
     }
 
     public void broadcastUDP(Packet packet) {
-        broadcastTCP(packet); // Always send TCP for absolute reliability
-
         try {
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
             DataOutputStream dos = new DataOutputStream(baos);
@@ -222,7 +196,7 @@ public class ServerNetworkManager {
                 }
             }
         } catch (IOException e) {
-            // UDP silent failure is okay since we fell back to TCP
+            // UDP failure ok
         }
     }
 

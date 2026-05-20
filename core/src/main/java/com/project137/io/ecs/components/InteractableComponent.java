@@ -7,4 +7,5 @@ public class InteractableComponent implements Component {
     public Type type = Type.WEAPON;
     public String templateId;
     public float radius = 40f;
+    public float pickupCooldown = 0f;
 }
