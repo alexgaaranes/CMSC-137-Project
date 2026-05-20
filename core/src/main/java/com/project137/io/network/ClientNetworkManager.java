@@ -3,7 +3,6 @@ package com.project137.io.network;
 import com.project137.io.NetworkConfig;
 import java.io.*;
 import java.net.*;
-import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.function.Consumer;
 
 public class ClientNetworkManager {
@@ -13,31 +12,11 @@ public class ClientNetworkManager {
     private DataOutputStream tcpOut;
     private int playerId;
     private boolean running = false;
-    private boolean threadsStarted = false;
     private Consumer<Packet> packetListener;
     private Runnable onDisconnect;
-    private final ConcurrentLinkedQueue<Packet> packetBuffer = new ConcurrentLinkedQueue<>();
 
     public void setPacketListener(Consumer<Packet> listener) {
         this.packetListener = listener;
-        if (listener != null) {
-            // Process buffered packets
-            Packet p;
-            while ((p = packetBuffer.poll()) != null) {
-                listener.accept(p);
-            }
-            
-            if (running && !threadsStarted) {
-                startThreads();
-            }
-        }
-    }
-
-    private void startThreads() {
-        if (threadsStarted) return;
-        threadsStarted = true;
-        Thread.ofVirtual().name("Client-TCP").start(this::listenTCP);
-        Thread.ofVirtual().name("Client-UDP").start(this::listenUDP);
     }
 
     public void setOnDisconnect(Runnable callback) {
@@ -45,18 +24,14 @@ public class ClientNetworkManager {
     }
 
     public void connect(String ip) throws IOException {
-        disconnect(); // Ensure clean state
-        tcpSocket = new Socket();
-        tcpSocket.connect(new InetSocketAddress(ip, NetworkConfig.PORT), 5000);
+        tcpSocket = new Socket(ip, NetworkConfig.PORT);
         tcpIn = new DataInputStream(tcpSocket.getInputStream());
         tcpOut = new DataOutputStream(tcpSocket.getOutputStream());
         udpSocket = new DatagramSocket();
         running = true;
-        threadsStarted = false;
-        
-        if (packetListener != null) {
-            startThreads();
-        }
+
+        Thread.ofVirtual().name("Client-TCP").start(this::listenTCP);
+        Thread.ofVirtual().name("Client-UDP").start(this::listenUDP);
     }
 
     private void listenTCP() {
@@ -125,38 +100,18 @@ public class ClientNetworkManager {
                         packet = res;
                     }
                     case OpCode.TCP_ROOM_PROGRESS -> {
-                        RoomProgressPacket progress = new RoomProgressPacket();
-                        progress.read(tcpIn);
-                        packet = progress;
-                    }
-                    case OpCode.UDP_PLAYER_UPDATE -> {
-                        PlayerUpdatePacket pup = new PlayerUpdatePacket();
-                        pup.read(tcpIn);
-                        packet = pup;
-                    }
-                    case OpCode.UDP_RESOURCE_UPDATE -> {
-                        ResourceUpdatePacket rup = new ResourceUpdatePacket();
-                        rup.read(tcpIn);
-                        packet = rup;
-                    }
-                    case OpCode.UDP_BULLET_SPAWN -> {
-                        BulletSpawnPacket bsp = new BulletSpawnPacket();
-                        bsp.read(tcpIn);
-                        packet = bsp;
+                        RoomProgressPacket rp = new RoomProgressPacket();
+                        rp.read(tcpIn);
+                        packet = rp;
                     }
                 }
                 
-                if (packet != null) {
-                    if (packetListener != null) {
-                        packetListener.accept(packet);
-                    } else {
-                        packetBuffer.add(packet);
-                    }
+                if (packet != null && packetListener != null) {
+                    packetListener.accept(packet);
                 }
             }
-        } catch (Throwable t) {
-            System.out.println("[Client] TCP error: " + t.getMessage());
-            t.printStackTrace();
+        } catch (IOException e) {
+            System.out.println("[Client] TCP connection lost: " + e.getMessage());
             handleDisconnect();
         }
     }
@@ -168,7 +123,7 @@ public class ClientNetworkManager {
     }
 
     private void listenUDP() {
-        byte[] buffer = new byte[2048]; // Larger buffer
+        byte[] buffer = new byte[2048];
         while (running) {
             try {
                 DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
@@ -189,17 +144,10 @@ public class ClientNetworkManager {
 
                 if (udpPacket != null) {
                     udpPacket.read(dis);
-                    if (packetListener != null) {
-                        packetListener.accept(udpPacket);
-                    } else {
-                        packetBuffer.add(udpPacket);
-                    }
+                    if (packetListener != null) packetListener.accept(udpPacket);
                 }
             } catch (IOException e) {
-                // UDP failure shouldn't disconnect TCP client
-                if (running) {
-                    System.out.println("[Client] UDP error (continuing via TCP): " + e.getMessage());
-                }
+                if (running) handleDisconnect();
             }
         }
     }
@@ -219,8 +167,6 @@ public class ClientNetworkManager {
 
     public void sendUDP(Packet packet) {
         if (!running) return;
-        sendTCP(packet); // Always send TCP for absolute reliability
-
         try {
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
             DataOutputStream dos = new DataOutputStream(baos);
@@ -236,9 +182,6 @@ public class ClientNetworkManager {
 
     public void disconnect() {
         running = false;
-        threadsStarted = false;
-        packetListener = null;
-        packetBuffer.clear();
         try {
             if (tcpSocket != null) tcpSocket.close();
             if (udpSocket != null) udpSocket.close();
