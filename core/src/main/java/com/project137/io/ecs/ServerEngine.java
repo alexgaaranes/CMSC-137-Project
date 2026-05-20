@@ -599,6 +599,9 @@ public class ServerEngine {
 
     private void processOneShotEvents() {
         InputPacket event;
+        java.util.Set<Integer> swappedPlayers = new java.util.HashSet<>();
+        java.util.Set<Integer> interactedPlayers = new java.util.HashSet<>();
+        
         while ((event = eventQueue.poll()) != null) {
             int playerId = event.playerId;
             Entity entity = entities.get(playerId);
@@ -606,12 +609,13 @@ public class ServerEngine {
             InventoryComponent inv = entity.getComponent(InventoryComponent.class);
             BodyComponent bc = entity.getComponent(BodyComponent.class);
             WeaponComponent wc = entity.getComponent(WeaponComponent.class);
-            if (event.swapTrigger && inv != null) {
+            
+            if (event.swapTrigger && inv != null && swappedPlayers.add(playerId)) {
                 inv.activeSlot = (inv.activeSlot + 1) % 2;
                 updateWeaponFromTemplate(wc, inv.weaponSlots[inv.activeSlot]);
                 networkManager.broadcastTCP(new WeaponChangePacket(playerId, inv.weaponSlots[0], inv.weaponSlots[1], inv.activeSlot));
             }
-            if (event.interactTrigger && inv != null && bc != null) {
+            if (event.interactTrigger && inv != null && bc != null && interactedPlayers.add(playerId)) {
                 handleInteraction(playerId, inv, bc);
             }
         }
