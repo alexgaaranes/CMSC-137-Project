@@ -102,7 +102,7 @@ public class GameScreen extends ScreenAdapter {
     private com.badlogic.gdx.graphics.Texture revolverTex;
     private com.badlogic.gdx.graphics.Texture smgTex;
     private com.badlogic.gdx.graphics.Texture rocketLauncherTex;
-    private com.badlogic.gdx.graphics.Texture healthOrbTex;
+    private com.badlogic.gdx.graphics.g2d.Animation<com.badlogic.gdx.graphics.g2d.TextureRegion> healthOrbAnim;
     private com.badlogic.gdx.graphics.Texture barBack, barHP, barEnergy, barHP_red;
     private com.badlogic.gdx.graphics.g2d.TextureRegion barrelRegion;
 
@@ -148,7 +148,7 @@ public class GameScreen extends ScreenAdapter {
             com.badlogic.gdx.utils.Array<com.badlogic.gdx.graphics.g2d.TextureRegion> frames = new com.badlogic.gdx.utils.Array<>();
             
             // For the boss or any multi-row sheet, let's just take the first row to avoid flickering
-            int rowsToUse = (path.contains("boss")) ? 1 : tmp.length;
+            int rowsToUse = (path.contains("boss") || path.contains("health")) ? 1 : tmp.length;
             for (int i = 0; i < rowsToUse; i++) {
                 for (int j = 0; j < tmp[i].length; j++) {
                     frames.add(tmp[i][j]);
@@ -186,7 +186,7 @@ public class GameScreen extends ScreenAdapter {
             revolverTex = new com.badlogic.gdx.graphics.Texture(Gdx.files.internal("sprites/weapons/revolver.png"));
             smgTex = new com.badlogic.gdx.graphics.Texture(Gdx.files.internal("sprites/weapons/smg.png"));
             rocketLauncherTex = new com.badlogic.gdx.graphics.Texture(Gdx.files.internal("sprites/weapons/rocketlauncher.png"));
-            healthOrbTex = new com.badlogic.gdx.graphics.Texture(Gdx.files.internal("sprites/pickups/health.png"));
+            healthOrbAnim = createAnim("sprites/pickups/health.png", 65, 62, 0.1f, com.badlogic.gdx.graphics.g2d.Animation.PlayMode.LOOP);
             
             // Load wooden crate from tileset
             com.badlogic.gdx.graphics.Texture tileset = new com.badlogic.gdx.graphics.Texture(Gdx.files.internal("textures/tileset.png"));
@@ -526,7 +526,8 @@ public class GameScreen extends ScreenAdapter {
                 );
             } else if (id >= 5000 || (id >= 3000 && id < 4000)) {
                 if ("health_orb".equals(es.templateId)) {
-                    spriteBatch.draw(healthOrbTex, es.x - 8, es.y - 8, 16, 16);
+                    com.badlogic.gdx.graphics.g2d.TextureRegion frame = healthOrbAnim.getKeyFrame(es.stateTime);
+                    spriteBatch.draw(frame, es.x - 10, es.y - 10, 20, 20);
                 } else if ("portal".equals(es.templateId)) {
                     com.badlogic.gdx.graphics.g2d.TextureRegion frame;
                     if (es.stateTime < portalStartAnim.getAnimationDuration()) {
@@ -835,7 +836,7 @@ public class GameScreen extends ScreenAdapter {
         if (revolverTex != null) revolverTex.dispose();
         if (smgTex != null) smgTex.dispose();
         if (rocketLauncherTex != null) rocketLauncherTex.dispose();
-        if (healthOrbTex != null) healthOrbTex.dispose();
+
         if (barBack != null) barBack.dispose();
         if (barHP != null) barHP.dispose();
         if (barHP_red != null) barHP_red.dispose();
