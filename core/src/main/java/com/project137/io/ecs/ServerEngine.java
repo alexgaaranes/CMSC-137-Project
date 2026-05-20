@@ -278,7 +278,7 @@ public class ServerEngine {
         }
     }
 
-    private void spawnItem(String templateId, int tx, int ty) {
+    private void spawnItem(String templateId, int tx, int ty, float cooldown) {
         int id = nextItemId.getAndIncrement();
         Entity entity = new Entity();
         NetworkComponent net = new NetworkComponent();
@@ -286,6 +286,7 @@ public class ServerEngine {
         entity.add(net);
         InteractableComponent interact = new InteractableComponent();
         interact.templateId = templateId;
+        interact.pickupCooldown = cooldown;
         entity.add(interact);
 
         BodyDef bodyDef = new BodyDef();
@@ -309,6 +310,10 @@ public class ServerEngine {
         engine.addEntity(entity);
         entities.put(id, entity);
         networkManager.broadcastTCP(new ItemSpawnPacket(id, templateId, body.getPosition().x * NetworkConfig.PPM, body.getPosition().y * NetworkConfig.PPM));
+    }
+
+    private void spawnItem(String templateId, int tx, int ty) {
+        spawnItem(templateId, tx, ty, 0f);
     }
 
     private void spawnEnemyFromTemplate(EnemyTemplate t, int tx, int ty) {
@@ -508,6 +513,10 @@ public class ServerEngine {
         for (Entity entity : entities.values()) {
             WeaponComponent wc = entity.getComponent(WeaponComponent.class);
             if (wc != null && wc.cooldown > 0) wc.cooldown -= delta;
+            
+            InteractableComponent ic_timer = entity.getComponent(InteractableComponent.class);
+            if (ic_timer != null && ic_timer.pickupCooldown > 0) ic_timer.pickupCooldown -= delta;
+
             EnergyComponent ec = entity.getComponent(EnergyComponent.class);
             if (ec != null && ec.currentEnergy < ec.maxEnergy) {
                 ec.currentEnergy = Math.min(ec.maxEnergy, ec.currentEnergy + ec.regenRate * delta);
@@ -951,7 +960,7 @@ public class ServerEngine {
             InteractableComponent interact = e.getComponent(InteractableComponent.class);
             boolean isRemoved;
             synchronized (removalQueue) { isRemoved = removalQueue.contains(e); }
-            if (interact != null && !isRemoved && !"health_orb".equals(interact.templateId) && !"portal".equals(interact.templateId)) {
+            if (interact != null && interact.pickupCooldown <= 0 && !isRemoved && !"health_orb".equals(interact.templateId) && !"portal".equals(interact.templateId)) {
                 BodyComponent itemBc = e.getComponent(BodyComponent.class);
                 if (itemBc != null && itemBc.body != null) {
                     float dist = bc.body.getPosition().dst(itemBc.body.getPosition());
@@ -971,7 +980,7 @@ public class ServerEngine {
             updateWeaponFromTemplate(entities.get(playerId).getComponent(WeaponComponent.class), item.templateId);
             synchronized (removalQueue) { removalQueue.add(nearestItem); }
             if (oldWeapon != null) {
-                spawnItem(oldWeapon, (int)(bc.body.getPosition().x * NetworkConfig.PPM / 16), (int)(bc.body.getPosition().y * NetworkConfig.PPM / 16));
+                spawnItem(oldWeapon, (int)(bc.body.getPosition().x * NetworkConfig.PPM / 16), (int)(bc.body.getPosition().y * NetworkConfig.PPM / 16), 1.0f);
             }
             networkManager.broadcastTCP(new WeaponChangePacket(playerId, inv.weaponSlots[0], inv.weaponSlots[1], inv.activeSlot));
         }
