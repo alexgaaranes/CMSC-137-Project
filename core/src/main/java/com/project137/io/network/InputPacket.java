@@ -7,19 +7,16 @@ import java.io.IOException;
 public class InputPacket implements Packet {
     public int playerId;
     public boolean up, down, left, right, attack;
-    public boolean swapTrigger, interactTrigger; // One-shot triggers
     public float targetAngle;
 
     public InputPacket() {}
-    public InputPacket(int playerId, boolean up, boolean down, boolean left, boolean right, boolean attack, boolean swap, boolean interact, float targetAngle) {
+    public InputPacket(int playerId, boolean up, boolean down, boolean left, boolean right, boolean attack, float targetAngle) {
         this.playerId = playerId;
         this.up = up;
         this.down = down;
         this.left = left;
         this.right = right;
         this.attack = attack;
-        this.swapTrigger = swap;
-        this.interactTrigger = interact;
         this.targetAngle = targetAngle;
     }
 
@@ -31,8 +28,6 @@ public class InputPacket implements Packet {
         out.writeBoolean(left);
         out.writeBoolean(right);
         out.writeBoolean(attack);
-        out.writeBoolean(swapTrigger);
-        out.writeBoolean(interactTrigger);
         out.writeFloat(targetAngle);
     }
 
@@ -44,8 +39,6 @@ public class InputPacket implements Packet {
         left = in.readBoolean();
         right = in.readBoolean();
         attack = in.readBoolean();
-        swapTrigger = in.readBoolean();
-        interactTrigger = in.readBoolean();
         targetAngle = in.readFloat();
     }
 

@@ -1,9 +1,10 @@
 package com.project137.io.world;
 
 import com.badlogic.gdx.Gdx;
+import com.badlogic.gdx.assets.AssetManager;
 import com.badlogic.gdx.graphics.Color;
-import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
+import com.badlogic.gdx.graphics.g2d.TextureAtlas;
 import com.badlogic.gdx.graphics.g2d.TextureRegion;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.math.Vector2;
@@ -11,17 +12,15 @@ import java.util.List;
 
 public class DungeonRenderer {
     private final ShapeRenderer shapeRenderer;
-    private final Texture tileset;
-    private final TextureRegion wall, gate, crate;
+    private final TextureRegion gate, crate;
     private final TextureRegion[] floorVariants;
+    private final TextureRegion[][] tmp;
 
-    public DungeonRenderer(ShapeRenderer shapeRenderer) {
+    public DungeonRenderer(ShapeRenderer shapeRenderer, AssetManager assetManager) {
         this.shapeRenderer = shapeRenderer;
-        this.tileset = new Texture(Gdx.files.internal("textures/tileset.png"));
-        TextureRegion[][] tmp = TextureRegion.split(tileset, 16, 16);
-        
-        // Single tile wall as requested [0][1]
-        this.wall = tmp[0][1];
+        TextureAtlas atlas = assetManager.get("atlas/game.atlas", TextureAtlas.class);
+        TextureAtlas.AtlasRegion tileset = atlas.findRegion("textures/tileset");
+        this.tmp = tileset.split(16, 16);
         
         // Improved grey floor variants
         this.floorVariants = new TextureRegion[] {
@@ -38,13 +37,14 @@ public class DungeonRenderer {
         if (map == null) return;
         
         batch.begin();
-        for (int x = 0; x < map.width; x++) {
-            for (int y = 0; y < map.height; y++) {
+        for (int y = 0; y < map.height; y++) {
+            for (int x = 0; x < map.width; x++) {
                 int tile = map.tiles[x][y];
                 TextureRegion region = null;
                 
                 if (tile == DungeonMap.TILE_WALL) {
-                    region = wall;
+                    // Do nothing, leave it as pitch black void
+                    region = null;
                 } else if (tile == DungeonMap.TILE_FLOOR) {
                     int variant = (x * 31 + y * 17) % 100;
                     region = variant < 80 ? floorVariants[0] : (variant < 90 ? floorVariants[1] : floorVariants[2]);
@@ -192,6 +192,6 @@ public class DungeonRenderer {
     }
 
     public void dispose() {
-        if (tileset != null) tileset.dispose();
+        // Assets are managed by AssetManager now
     }
 }

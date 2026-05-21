@@ -1,7 +1,7 @@
 [
   {
-    "id": "slime",
-    "name": "Slime",
+    "id": "skeleton",
+    "name": "Skeleton",
     "hp": 30,
     "speed": 3,
     "detectRange": 500,
@@ -10,8 +10,8 @@
     "attackRate": 1.0
   },
   {
-    "id": "goblin",
-    "name": "Goblin",
+    "id": "vampire",
+    "name": "Vampire",
     "hp": 60,
     "speed": 4.5,
     "detectRange": 800,

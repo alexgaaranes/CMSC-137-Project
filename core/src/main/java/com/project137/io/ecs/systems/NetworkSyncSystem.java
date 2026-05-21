@@ -4,6 +4,7 @@ import com.badlogic.ashley.core.ComponentMapper;
 import com.badlogic.ashley.core.Entity;
 import com.badlogic.ashley.core.Family;
 import com.badlogic.ashley.systems.IteratingSystem;
+import com.badlogic.gdx.math.Vector2;
 import com.project137.io.NetworkConfig;
 import com.project137.io.ecs.components.BodyComponent;
 import com.project137.io.ecs.components.EnergyComponent;
@@ -13,6 +14,8 @@ import com.project137.io.network.PlayerUpdatePacket;
 import com.project137.io.network.ResourceUpdatePacket;
 import com.project137.io.network.server.ServerNetworkManager;
 
+import java.util.concurrent.ConcurrentHashMap;
+
 public class NetworkSyncSystem extends IteratingSystem {
     private final ServerNetworkManager networkManager;
     private final ComponentMapper<BodyComponent> bm = ComponentMapper.getFor(BodyComponent.class);
@@ -21,6 +24,15 @@ public class NetworkSyncSystem extends IteratingSystem {
     private final ComponentMapper<EnergyComponent> em = ComponentMapper.getFor(EnergyComponent.class);
     private final ComponentMapper<com.project137.io.ecs.components.PlayerComponent> pm = ComponentMapper.getFor(com.project137.io.ecs.components.PlayerComponent.class);
     private long sequence = 0;
+    
+    private float syncTimer = 0f;
+    private static final float SYNC_RATE = 1.0f / 20f; // 20Hz
+    
+    private static class LastState {
+        float x = -9999, y = -9999, angle = -9999;
+        float hp = -9999, maxHp = -9999, energy = -9999, maxEnergy = -9999, reviveProgress = -9999;
+    }
+    private final ConcurrentHashMap<Integer, LastState> lastStates = new ConcurrentHashMap<>();
 
     public NetworkSyncSystem(ServerNetworkManager networkManager) {
         super(Family.all(BodyComponent.class, NetworkComponent.class).get());
@@ -28,19 +40,41 @@ public class NetworkSyncSystem extends IteratingSystem {
     }
 
     @Override
+    public void update(float deltaTime) {
+        syncTimer += deltaTime;
+        if (syncTimer >= SYNC_RATE) {
+            super.update(deltaTime);
+            syncTimer -= SYNC_RATE;
+            // Prevent timer from spiraling if lagging
+            if (syncTimer > SYNC_RATE) syncTimer = 0f;
+        }
+    }
+
+    @Override
     protected void processEntity(Entity entity, float deltaTime) {
         BodyComponent body = bm.get(entity);
         NetworkComponent net = nm.get(entity);
         
-        // Position Sync
-        PlayerUpdatePacket packet = new PlayerUpdatePacket(
-            net.id,
-            body.body.getPosition().x * NetworkConfig.PPM,
-            body.body.getPosition().y * NetworkConfig.PPM,
-            body.body.getAngle(),
-            sequence++
-        );
-        networkManager.broadcastUDP(packet);
+        LastState state = lastStates.computeIfAbsent(net.id, k -> new LastState());
+        
+        float currentX = body.body.getPosition().x * NetworkConfig.PPM;
+        float currentY = body.body.getPosition().y * NetworkConfig.PPM;
+        float currentAngle = body.body.getAngle();
+        
+        if (Math.abs(state.x - currentX) > 0.05f || Math.abs(state.y - currentY) > 0.05f || Math.abs(state.angle - currentAngle) > 0.05f) {
+            state.x = currentX;
+            state.y = currentY;
+            state.angle = currentAngle;
+            
+            PlayerUpdatePacket packet = new PlayerUpdatePacket(
+                net.id,
+                currentX,
+                currentY,
+                currentAngle,
+                sequence++
+            );
+            networkManager.broadcastUDP(packet);
+        }
 
         // Resource Sync (HP/Energy)
         HealthComponent hc = hm.get(entity);
@@ -51,7 +85,21 @@ public class NetworkSyncSystem extends IteratingSystem {
             float progress = 0;
             com.project137.io.ecs.components.PlayerComponent pc = pm.get(entity);
             if (pc != null) progress = pc.reviveProgress;
-            networkManager.broadcastUDP(new ResourceUpdatePacket(net.id, hc.currentHealth, hc.maxHealth, energy, maxEnergy, progress));
+            
+            if (Math.abs(state.hp - hc.currentHealth) > 0.5f || 
+                Math.abs(state.maxHp - hc.maxHealth) > 0.5f ||
+                Math.abs(state.energy - energy) > 0.5f ||
+                Math.abs(state.maxEnergy - maxEnergy) > 0.5f ||
+                Math.abs(state.reviveProgress - progress) > 0.1f) {
+                
+                state.hp = hc.currentHealth;
+                state.maxHp = hc.maxHealth;
+                state.energy = energy;
+                state.maxEnergy = maxEnergy;
+                state.reviveProgress = progress;
+                
+                networkManager.broadcastUDP(new ResourceUpdatePacket(net.id, hc.currentHealth, hc.maxHealth, energy, maxEnergy, progress));
+            }
         }
     }
 }

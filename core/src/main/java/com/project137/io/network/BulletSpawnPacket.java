@@ -41,6 +41,6 @@ public class BulletSpawnPacket implements Packet {
 
     @Override
     public byte getOpCode() {
-        return OpCode.UDP_BULLET_SPAWN;
+        return OpCode.TCP_BULLET_SPAWN;
     }
 }

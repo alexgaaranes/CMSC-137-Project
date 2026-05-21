@@ -1,0 +1,251 @@
+
+game.png
+size: 4096, 2048
+format: RGBA8888
+filter: Nearest, Nearest
+repeat: none
+sprites/boss/boss_hit
+  rotate: false
+  xy: 2, 344
+  size: 1248, 340
+  orig: 1248, 340
+  offset: 0, 0
+  index: -1
+sprites/boss/boss_idle
+  rotate: false
+  xy: 2, 686
+  size: 1248, 1360
+  orig: 1248, 1360
+  offset: 0, 0
+  index: -1
+sprites/enemy1/skeleton_attack
+  rotate: false
+  xy: 580, 276
+  size: 288, 32
+  orig: 288, 32
+  offset: 0, 0
+  index: -1
+sprites/enemy1/skeleton_death
+  rotate: false
+  xy: 1907, 812
+  size: 544, 32
+  orig: 544, 32
+  offset: 0, 0
+  index: -1
+sprites/enemy1/skeleton_idle
+  rotate: false
+  xy: 3224, 1916
+  size: 192, 32
+  orig: 192, 32
+  offset: 0, 0
+  index: -1
+sprites/enemy1/skeleton_movement
+  rotate: false
+  xy: 2454, 1630
+  size: 320, 32
+  orig: 320, 32
+  offset: 0, 0
+  index: -1
+sprites/enemy2/vampire_attack
+  rotate: false
+  xy: 580, 310
+  size: 512, 32
+  orig: 512, 32
+  offset: 0, 0
+  index: -1
+sprites/enemy2/vampire_death
+  rotate: false
+  xy: 1907, 778
+  size: 448, 32
+  orig: 448, 32
+  offset: 0, 0
+  index: -1
+sprites/enemy2/vampire_idle
+  rotate: false
+  xy: 3802, 2014
+  size: 192, 32
+  orig: 192, 32
+  offset: 0, 0
+  index: -1
+sprites/enemy2/vampire_movement
+  rotate: false
+  xy: 2838, 1818
+  size: 256, 32
+  orig: 256, 32
+  offset: 0, 0
+  index: -1
+sprites/pickups/health
+  rotate: false
+  xy: 1252, 472
+  size: 653, 372
+  orig: 653, 372
+  offset: 0, 0
+  index: -1
+sprites/player1/Death1
+  rotate: false
+  xy: 340, 34
+  size: 16, 16
+  orig: 16, 16
+  offset: 0, 0
+  index: -1
+sprites/player1/Hit1
+  rotate: false
+  xy: 1094, 326
+  size: 112, 16
+  orig: 112, 16
+  offset: 0, 0
+  index: -1
+sprites/player1/Idle1
+  rotate: false
+  xy: 3096, 1834
+  size: 64, 16
+  orig: 64, 16
+  offset: 0, 0
+  index: -1
+sprites/player1/Run1
+  rotate: false
+  xy: 2357, 794
+  size: 80, 16
+  orig: 80, 16
+  offset: 0, 0
+  index: -1
+sprites/player2/Death2
+  rotate: false
+  xy: 2776, 1646
+  size: 16, 16
+  orig: 16, 16
+  offset: 0, 0
+  index: -1
+sprites/player2/Hit2
+  rotate: false
+  xy: 580, 258
+  size: 112, 16
+  orig: 112, 16
+  offset: 0, 0
+  index: -1
+sprites/player2/Idle2
+  rotate: false
+  xy: 388, 154
+  size: 64, 16
+  orig: 64, 16
+  offset: 0, 0
+  index: -1
+sprites/player2/Run2
+  rotate: false
+  xy: 870, 292
+  size: 80, 16
+  orig: 80, 16
+  offset: 0, 0
+  index: -1
+sprites/portals/Portal1_Idle
+  rotate: false
+  xy: 2838, 1852
+  size: 384, 96
+  orig: 384, 96
+  offset: 0, 0
+  index: -1
+sprites/portals/Portal1_Start
+  rotate: false
+  xy: 2, 246
+  size: 576, 96
+  orig: 576, 96
+  offset: 0, 0
+  index: -1
+sprites/portals/Portal2_Idle
+  rotate: false
+  xy: 3416, 1950
+  size: 384, 96
+  orig: 384, 96
+  offset: 0, 0
+  index: -1
+sprites/portals/Portal2_Start
+  rotate: false
+  xy: 2838, 1950
+  size: 576, 96
+  orig: 576, 96
+  offset: 0, 0
+  index: -1
+sprites/projectile/long-bullet
+  rotate: false
+  xy: 1252, 846
+  size: 1200, 1200
+  orig: 1200, 1200
+  offset: 0, 0
+  index: -1
+sprites/projectile/rocket
+  rotate: false
+  xy: 2454, 1664
+  size: 382, 382
+  orig: 382, 382
+  offset: 0, 0
+  index: -1
+sprites/projectile/rocket-explosion
+  rotate: false
+  xy: 2, 2
+  size: 336, 48
+  orig: 336, 48
+  offset: 0, 0
+  index: -1
+sprites/projectile/small-bullet
+  rotate: false
+  xy: 1907, 657
+  size: 123, 119
+  orig: 123, 119
+  offset: 0, 0
+  index: -1
+sprites/weapons/revolver
+  rotate: false
+  xy: 2838, 1762
+  size: 96, 54
+  orig: 96, 54
+  offset: 0, 0
+  index: -1
+sprites/weapons/rocketlauncher
+  rotate: false
+  xy: 388, 172
+  size: 174, 72
+  orig: 174, 72
+  offset: 0, 0
+  index: -1
+sprites/weapons/smg
+  rotate: false
+  xy: 2454, 1543
+  size: 135, 85
+  orig: 135, 85
+  offset: 0, 0
+  index: -1
+textures/hud/HPBar_back
+  rotate: false
+  xy: 1907, 653
+  size: 16, 2
+  orig: 16, 2
+  offset: 0, 0
+  index: -1
+textures/hud/HPBar_green
+  rotate: false
+  xy: 2032, 774
+  size: 16, 2
+  orig: 16, 2
+  offset: 0, 0
+  index: -1
+textures/hud/HPBar_red
+  rotate: false
+  xy: 3224, 1912
+  size: 16, 2
+  orig: 16, 2
+  offset: 0, 0
+  index: -1
+textures/hud/HPBar_yellow
+  rotate: false
+  xy: 3802, 2010
+  size: 16, 2
+  orig: 16, 2
+  offset: 0, 0
+  index: -1
+textures/tileset
+  rotate: false
+  xy: 2, 52
+  size: 384, 192
+  orig: 384, 192
+  offset: 0, 0
+  index: -1

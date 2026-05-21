@@ -35,7 +35,7 @@ public class ServerEngine {
     private final World world;
     private final ConcurrentHashMap<Integer, Entity> entities = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<Integer, InputPacket> pendingInputs = new ConcurrentHashMap<>();
-    private final ConcurrentLinkedQueue<InputPacket> eventQueue = new ConcurrentLinkedQueue<>();
+    private final ConcurrentLinkedQueue<DiscreteInputPacket> discreteEventQueue = new ConcurrentLinkedQueue<>();
     
     private final AtomicInteger nextEnemyId = new AtomicInteger(1000);
     private final AtomicInteger nextProjectileId = new AtomicInteger(2000); 
@@ -395,7 +395,7 @@ public class ServerEngine {
         engine.addEntity(entity);
         entities.put(id, entity);
 
-        networkManager.broadcastUDP(new BulletSpawnPacket(id, x * NetworkConfig.PPM, y * NetworkConfig.PPM, velocity.x * NetworkConfig.PPM, velocity.y * NetworkConfig.PPM, type));
+        networkManager.broadcastTCP(new BulletSpawnPacket(id, x * NetworkConfig.PPM, y * NetworkConfig.PPM, velocity.x * NetworkConfig.PPM, velocity.y * NetworkConfig.PPM, type));
     }
 
     private void setupContactListener() {
@@ -540,21 +540,6 @@ public class ServerEngine {
                     synchronized (removalQueue) { if (!removalQueue.contains(entity)) removalQueue.add(entity); }
                 }
             }
-
-            // Send resource updates for players
-            PlayerComponent pc_player = entity.getComponent(PlayerComponent.class);
-            if (pc_player != null) {
-                HealthComponent hc_player = entity.getComponent(HealthComponent.class);
-                EnergyComponent ec_player = entity.getComponent(EnergyComponent.class);
-                if (hc_player != null && ec_player != null) {
-                    networkManager.broadcastUDP(new ResourceUpdatePacket(
-                        entity.getComponent(NetworkComponent.class).id,
-                        hc_player.currentHealth, hc_player.maxHealth,
-                        ec_player.currentEnergy, ec_player.maxEnergy,
-                        pc_player.reviveProgress
-                    ));
-                }
-            }
         }
 
         if (!gameOver && networkManager.hasClients()) {
@@ -607,11 +592,11 @@ public class ServerEngine {
     }
 
     private void processOneShotEvents() {
-        InputPacket event;
+        DiscreteInputPacket event;
         java.util.Set<Integer> swappedPlayers = new java.util.HashSet<>();
         java.util.Set<Integer> interactedPlayers = new java.util.HashSet<>();
         
-        while ((event = eventQueue.poll()) != null) {
+        while ((event = discreteEventQueue.poll()) != null) {
             int playerId = event.playerId;
             Entity entity = entities.get(playerId);
             if (entity == null) continue;
@@ -1012,7 +997,10 @@ public class ServerEngine {
 
     public void queueInput(InputPacket input) {
         pendingInputs.put(input.playerId, input);
-        if (input.swapTrigger || input.interactTrigger) eventQueue.add(input);
+    }
+
+    public void queueDiscreteInput(DiscreteInputPacket input) {
+        discreteEventQueue.add(input);
     }
 
     public void addPlayer(int playerId) {

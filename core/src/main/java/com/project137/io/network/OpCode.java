@@ -19,12 +19,13 @@ public class OpCode {
     public static final byte TCP_ITEM_SPAWN = 21;
     public static final byte TCP_ROOM_PROGRESS = 22;
     public static final byte TCP_DISCONNECT = 99;
+    public static final byte TCP_DISCRETE_INPUT = 23;
+    public static final byte TCP_BULLET_SPAWN = 24;
 
     // Unreliable (UDP) Codes
     public static final byte UDP_HELLO = 10;
     public static final byte UDP_INPUT = 15;
     public static final byte UDP_PLAYER_UPDATE = 11;
     public static final byte UDP_ENEMY_UPDATE = 12;
-    public static final byte UDP_BULLET_SPAWN = 13;
     public static final byte UDP_RESOURCE_UPDATE = 14;
 }

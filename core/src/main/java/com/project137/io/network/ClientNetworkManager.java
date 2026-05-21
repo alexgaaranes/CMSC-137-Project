@@ -104,6 +104,11 @@ public class ClientNetworkManager {
                         rp.read(tcpIn);
                         packet = rp;
                     }
+                    case OpCode.TCP_BULLET_SPAWN -> {
+                        BulletSpawnPacket bullet = new BulletSpawnPacket();
+                        bullet.read(tcpIn);
+                        packet = bullet;
+                    }
                 }
                 
                 if (packet != null && packetListener != null) {
@@ -138,8 +143,6 @@ public class ClientNetworkManager {
                     udpPacket = new PlayerUpdatePacket();
                 } else if (opCode == OpCode.UDP_RESOURCE_UPDATE) {
                     udpPacket = new ResourceUpdatePacket();
-                } else if (opCode == OpCode.UDP_BULLET_SPAWN) {
-                    udpPacket = new BulletSpawnPacket();
                 }
 
                 if (udpPacket != null) {

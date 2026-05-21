@@ -164,8 +164,8 @@ public class DungeonGenerator {
         for (int x = 0; x < map.width; x++) {
             for (int y = 0; y < map.height; y++) {
                 if (map.tiles[x][y] == DungeonMap.TILE_FLOOR) {
-                    for (int dx = -1; dx <= 1; dx++) {
-                        for (int dy = -1; dy <= 1; dy++) {
+                    for (int dx = -2; dx <= 2; dx++) {
+                        for (int dy = -2; dy <= 2; dy++) {
                             int nx = x + dx;
                             int ny = y + dy;
                             if (nx >= 0 && nx < map.width && ny >= 0 && ny < map.height) {
@@ -177,6 +177,15 @@ public class DungeonGenerator {
                     }
                 }
             }
+        }
+        
+        for (int x = 0; x < map.width; x++) {
+            map.tiles[x][0] = DungeonMap.TILE_WALL;
+            map.tiles[x][map.height - 1] = DungeonMap.TILE_WALL;
+        }
+        for (int y = 0; y < map.height; y++) {
+            map.tiles[0][y] = DungeonMap.TILE_WALL;
+            map.tiles[map.width - 1][y] = DungeonMap.TILE_WALL;
         }
     }
 }

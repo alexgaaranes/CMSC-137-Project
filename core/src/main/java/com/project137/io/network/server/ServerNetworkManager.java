@@ -99,6 +99,10 @@ public class ServerNetworkManager {
                         broadcastTCP(new MapDataPacket(gameEngine.getMap()));
                         broadcastTCP(new StartGamePacket());
                     }
+                } else if (opCode == OpCode.TCP_DISCRETE_INPUT) {
+                    DiscreteInputPacket input = new DiscreteInputPacket();
+                    input.read(client.in);
+                    gameEngine.queueDiscreteInput(input);
                 } else if (opCode == OpCode.TCP_BUFF_VOTE_SUBMIT) {
                     BuffPackets.BuffVoteSubmitPacket vote = new BuffPackets.BuffVoteSubmitPacket();
                     vote.read(client.in);
