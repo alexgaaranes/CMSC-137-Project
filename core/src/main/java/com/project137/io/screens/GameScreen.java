@@ -27,6 +27,10 @@ import com.project137.io.ecs.data.DataManager;
 import com.project137.io.world.DungeonMap;                      
 import com.project137.io.world.DungeonRenderer;
 
+import com.badlogic.gdx.graphics.glutils.FrameBuffer;
+import com.badlogic.gdx.graphics.glutils.ShaderProgram;
+import com.badlogic.gdx.graphics.Pixmap;
+
 import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -39,6 +43,14 @@ public class GameScreen extends ScreenAdapter {
     private final ExtendViewport viewport;
     private final DungeonRenderer dungeonRenderer;
     private DungeonMap map;
+    
+    private FrameBuffer sceneFbo;
+    private FrameBuffer pingPongFbo1;
+    private FrameBuffer pingPongFbo2;
+    private ShaderProgram defaultShader;
+    private ShaderProgram thresholdShader;
+    private ShaderProgram blurShader;
+    private boolean bloomEnabled = true;
     
     private Stage hudStage;
     private Skin skin;
@@ -180,6 +192,16 @@ public class GameScreen extends ScreenAdapter {
 
         this.viewport = new ExtendViewport(640, 480);
         this.dungeonRenderer = new DungeonRenderer(shapeRenderer, game.assetManager);
+        
+        ShaderProgram.pedantic = false;
+        defaultShader = SpriteBatch.createDefaultShader();
+        thresholdShader = new ShaderProgram(Gdx.files.internal("shaders/default.vert"), Gdx.files.internal("shaders/threshold.frag"));
+        blurShader = new ShaderProgram(Gdx.files.internal("shaders/default.vert"), Gdx.files.internal("shaders/blur.frag"));
+        
+        if (!thresholdShader.isCompiled() || !blurShader.isCompiled()) {
+            System.err.println("Shader compile error: " + thresholdShader.getLog() + blurShader.getLog());
+            bloomEnabled = false;
+        }
 
         try {
             com.badlogic.gdx.graphics.g2d.TextureAtlas atlas = game.assetManager.get("atlas/game.atlas", com.badlogic.gdx.graphics.g2d.TextureAtlas.class);
@@ -409,6 +431,10 @@ public class GameScreen extends ScreenAdapter {
         updateInterpolation(delta);
         updateAimAngle();
         sendInput();
+
+        if (bloomEnabled && sceneFbo != null) {
+            sceneFbo.begin();
+        }
 
         Gdx.gl.glClearColor(0f, 0f, 0f, 1);
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT);
@@ -641,6 +667,58 @@ public class GameScreen extends ScreenAdapter {
             }
             spriteBatch.end();
         }
+
+        if (bloomEnabled && sceneFbo != null) {
+            sceneFbo.end();
+
+            // 1. Threshold pass
+            pingPongFbo1.begin();
+            Gdx.gl.glClearColor(0, 0, 0, 1);
+            Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT);
+            spriteBatch.setShader(thresholdShader);
+            spriteBatch.getProjectionMatrix().setToOrtho2D(0, 0, sceneFbo.getWidth(), sceneFbo.getHeight());
+            spriteBatch.begin();
+            spriteBatch.draw(sceneFbo.getColorBufferTexture(), 0, sceneFbo.getHeight(), sceneFbo.getWidth(), -sceneFbo.getHeight());
+            spriteBatch.end();
+            pingPongFbo1.end();
+
+            // 2. Blur Horizontal
+            pingPongFbo2.begin();
+            Gdx.gl.glClearColor(0, 0, 0, 1);
+            Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT);
+            spriteBatch.setShader(blurShader);
+            blurShader.bind();
+            blurShader.setUniformf("dir", 1f, 0f);
+            blurShader.setUniformf("resolution", sceneFbo.getWidth(), sceneFbo.getHeight());
+            spriteBatch.begin();
+            spriteBatch.draw(pingPongFbo1.getColorBufferTexture(), 0, pingPongFbo1.getHeight(), pingPongFbo1.getWidth(), -pingPongFbo1.getHeight());
+            spriteBatch.end();
+            pingPongFbo2.end();
+
+            // 3. Blur Vertical
+            pingPongFbo1.begin();
+            Gdx.gl.glClearColor(0, 0, 0, 1);
+            Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT);
+            blurShader.bind();
+            blurShader.setUniformf("dir", 0f, 1f);
+            blurShader.setUniformf("resolution", sceneFbo.getWidth(), sceneFbo.getHeight());
+            spriteBatch.begin();
+            spriteBatch.draw(pingPongFbo2.getColorBufferTexture(), 0, pingPongFbo2.getHeight(), pingPongFbo2.getWidth(), -pingPongFbo2.getHeight());
+            spriteBatch.end();
+            pingPongFbo1.end();
+
+            // 4. Composite to Screen
+            Gdx.gl.glClearColor(0, 0, 0, 1);
+            Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT);
+            spriteBatch.setShader(defaultShader);
+            spriteBatch.getProjectionMatrix().setToOrtho2D(0, 0, Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
+            spriteBatch.begin();
+            spriteBatch.draw(sceneFbo.getColorBufferTexture(), 0, Gdx.graphics.getHeight(), Gdx.graphics.getWidth(), -Gdx.graphics.getHeight());
+            spriteBatch.setBlendFunction(GL20.GL_SRC_ALPHA, GL20.GL_ONE);
+            spriteBatch.draw(pingPongFbo1.getColorBufferTexture(), 0, Gdx.graphics.getHeight(), Gdx.graphics.getWidth(), -Gdx.graphics.getHeight());
+            spriteBatch.setBlendFunction(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA);
+            spriteBatch.end();
+        }
         
         shapeRenderer.setProjectionMatrix(new com.badlogic.gdx.math.Matrix4().setToOrtho2D(0, 0, hudStage.getViewport().getWorldWidth(), hudStage.getViewport().getWorldHeight()));
         java.util.List<Vector2> otherPlayers = new java.util.ArrayList<>();
@@ -745,6 +823,13 @@ public class GameScreen extends ScreenAdapter {
     }
 
     private void sendInput() {
+        if (Gdx.input.isKeyJustPressed(Input.Keys.F4)) {
+            bloomEnabled = !bloomEnabled;
+            synchronized(effects) {
+                effects.add(new Effect(localX, localY + 20, "Bloom: " + (bloomEnabled ? "ON" : "OFF"), Color.CYAN));
+            }
+        }
+        
         if (currentHP <= 0) {
             boolean swap = Gdx.input.isKeyJustPressed(Input.Keys.Q);
             boolean interact = Gdx.input.isKeyJustPressed(Input.Keys.E);
@@ -845,6 +930,14 @@ public class GameScreen extends ScreenAdapter {
     public void resize(int width, int height) {
         viewport.update(width, height, true);
         hudStage.getViewport().update(width, height, true);
+        
+        if (sceneFbo != null) sceneFbo.dispose();
+        if (pingPongFbo1 != null) pingPongFbo1.dispose();
+        if (pingPongFbo2 != null) pingPongFbo2.dispose();
+
+        sceneFbo = new FrameBuffer(Pixmap.Format.RGBA8888, width, height, false);
+        pingPongFbo1 = new FrameBuffer(Pixmap.Format.RGBA8888, width, height, false);
+        pingPongFbo2 = new FrameBuffer(Pixmap.Format.RGBA8888, width, height, false);
     }
 
     @Override
@@ -855,5 +948,12 @@ public class GameScreen extends ScreenAdapter {
         hudStage.dispose();
         skin.dispose();
         if (dungeonRenderer != null) dungeonRenderer.dispose();
+        
+        if (sceneFbo != null) sceneFbo.dispose();
+        if (pingPongFbo1 != null) pingPongFbo1.dispose();
+        if (pingPongFbo2 != null) pingPongFbo2.dispose();
+        if (defaultShader != null) defaultShader.dispose();
+        if (thresholdShader != null) thresholdShader.dispose();
+        if (blurShader != null) blurShader.dispose();
     }
 }
